@@ -1,6 +1,6 @@
 import { Link, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   addPerson,
   getPeopleWithCounts,
@@ -37,6 +37,8 @@ export default function Home() {
   const [sort, setSort] = useState<SortKey>("recent");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [confirmingRemoveId, setConfirmingRemoveId] = useState<string | null>(null);
+  const [cardError, setCardError] = useState<{ id: string; message: string } | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -76,12 +78,14 @@ export default function Home() {
     setName("");
     // Clear any search so the new jar is visible on the shelf right away.
     setQuery("");
+    setCardError(null);
     await refresh();
   }
 
   function startRename(row: Row) {
     setEditingId(row.id);
     setDraft(row.name);
+    setCardError(null);
   }
 
   function cancelRename() {
@@ -98,36 +102,43 @@ export default function Home() {
     try {
       await renamePerson(row.id, next);
     } catch {
-      Alert.alert("Couldn't save that name", "Please try again.");
+      // Inline error — the draft is preserved so nothing typed is lost.
+      setCardError({ id: row.id, message: "Couldn't save that name. Please try again." });
       return;
     }
     cancelRename();
+    setCardError(null);
     await refresh();
   }
 
-  function askRemove(row: Row) {
+  function removeDetail(row: Row): string {
     const noun = row.count === 1 ? "marble" : "marbles";
-    const detail =
-      row.count > 0
-        ? `Their jar holds ${row.count} ${noun} — every reason and tag goes with it. This can't be undone.`
-        : "Their jar is empty, so no marbles go with it — but they leave the shelf for good.";
-    Alert.alert(`Remove ${row.name}?`, detail, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Remove",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await removePerson(row.id);
-          } catch {
-            Alert.alert("Couldn't remove that jar", "Please try again.");
-            return;
-          }
-          if (editingId === row.id) cancelRename();
-          await refresh();
-        },
-      },
-    ]);
+    return row.count > 0
+      ? `Their jar holds ${row.count} ${noun} — every reason and tag goes with it. This can't be undone.`
+      : "Their jar is empty, so no marbles go with it — but they leave the shelf for good.";
+  }
+
+  function showRemoveConfirm(row: Row) {
+    setConfirmingRemoveId(row.id);
+    setCardError(null);
+  }
+
+  function cancelRemove() {
+    setConfirmingRemoveId(null);
+  }
+
+  async function confirmRemove(row: Row) {
+    try {
+      await removePerson(row.id);
+    } catch {
+      // Back to the plain footer with an inline error; the user can retry.
+      setConfirmingRemoveId(null);
+      setCardError({ id: row.id, message: "Couldn't remove that jar. Please try again." });
+      return;
+    }
+    setConfirmingRemoveId(null);
+    setCardError(null);
+    await refresh();
   }
 
   function renderRow(item: Row) {
@@ -179,6 +190,16 @@ export default function Home() {
                 <Text style={s.actionText}>Cancel</Text>
               </Pressable>
             </View>
+            {cardError?.id === item.id && (
+              <Text
+                testID="card-error"
+                nativeID="card-error"
+                accessibilityRole="alert"
+                style={s.cardError}
+              >
+                {cardError.message}
+              </Text>
+            )}
           </View>
         ) : (
           <View>
@@ -201,31 +222,74 @@ export default function Home() {
                 </View>
               </Pressable>
             </Link>
-            <View style={s.cardActions}>
-              <Pressable
-                testID="rename-person-button"
-                nativeID="rename-person-button"
-                accessibilityRole="button"
-                accessibilityLabel={`Rename ${item.name}`}
-                onPress={() => startRename(item)}
-                hitSlop={8}
-                style={({ pressed }) => [s.ghostBtn, pressed && s.pressed]}
+            {confirmingRemoveId === item.id ? (
+              <View style={s.confirmBox}>
+                <Text style={s.confirmText}>
+                  Remove {item.name}? {removeDetail(item)}
+                </Text>
+                <View style={s.confirmActions}>
+                  <Pressable
+                    testID="remove-cancel"
+                    nativeID="remove-cancel"
+                    accessibilityRole="button"
+                    accessibilityLabel={`Cancel removing ${item.name}`}
+                    onPress={cancelRemove}
+                    hitSlop={8}
+                    style={({ pressed }) => [s.ghostBtn, pressed && s.pressed]}
+                  >
+                    <Text style={s.actionText}>Cancel</Text>
+                  </Pressable>
+                  <Pressable
+                    testID="remove-confirm"
+                    nativeID="remove-confirm"
+                    accessibilityRole="button"
+                    accessibilityLabel={`Confirm removing ${item.name}`}
+                    accessibilityHint={`Deletes their jar and all ${item.count} marbles`}
+                    onPress={() => confirmRemove(item)}
+                    hitSlop={8}
+                    style={({ pressed }) => [s.saveBtn, pressed && s.pressed]}
+                  >
+                    <Text style={s.saveBtnText}>Remove</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              <View style={s.cardActions}>
+                <Pressable
+                  testID="rename-person-button"
+                  nativeID="rename-person-button"
+                  accessibilityRole="button"
+                  accessibilityLabel={`Rename ${item.name}`}
+                  onPress={() => startRename(item)}
+                  hitSlop={8}
+                  style={({ pressed }) => [s.ghostBtn, pressed && s.pressed]}
+                >
+                  <Text style={s.actionText}>Rename</Text>
+                </Pressable>
+                <Pressable
+                  testID="remove-person-button"
+                  nativeID="remove-person-button"
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${item.name}`}
+                  accessibilityHint={`Deletes their jar and all ${item.count} marbles`}
+                  onPress={() => showRemoveConfirm(item)}
+                  hitSlop={8}
+                  style={({ pressed }) => [s.ghostBtn, pressed && s.pressed]}
+                >
+                  <Text style={s.removeText}>Remove</Text>
+                </Pressable>
+              </View>
+            )}
+            {cardError?.id === item.id && (
+              <Text
+                testID="card-error"
+                nativeID="card-error"
+                accessibilityRole="alert"
+                style={s.cardError}
               >
-                <Text style={s.actionText}>Rename</Text>
-              </Pressable>
-              <Pressable
-                testID="remove-person-button"
-                nativeID="remove-person-button"
-                accessibilityRole="button"
-                accessibilityLabel={`Remove ${item.name}`}
-                accessibilityHint={`Deletes their jar and all ${item.count} marbles`}
-                onPress={() => askRemove(item)}
-                hitSlop={8}
-                style={({ pressed }) => [s.ghostBtn, pressed && s.pressed]}
-              >
-                <Text style={s.removeText}>Remove</Text>
-              </Pressable>
-            </View>
+                {cardError.message}
+              </Text>
+            )}
           </View>
         )}
       </View>
@@ -413,4 +477,15 @@ const s = StyleSheet.create({
     justifyContent: "center",
   },
   saveBtnText: { color: "#FAF7F0", fontWeight: "700", fontSize: 13 },
+  confirmBox: {
+    marginTop: 12,
+    backgroundColor: "#FAF7F0",
+    borderWidth: 1,
+    borderColor: "#EDE6D3",
+    borderRadius: 14,
+    padding: 12,
+  },
+  confirmText: { fontSize: 13, lineHeight: 18, color: "#5C564A" },
+  confirmActions: { flexDirection: "row", gap: 8, marginTop: 10 },
+  cardError: { fontSize: 13, lineHeight: 18, color: "#5C564A", marginTop: 8 },
 });
