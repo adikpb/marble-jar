@@ -300,6 +300,111 @@
           "#D8D6D2",
           "#F3F2F2"
         ]
+      },
+      "tag-boundaries": {
+        "role": "neutral",
+        "displayName": "Boundaries Gold",
+        "canonical": "#BE9A4E",
+        "tonalRamp": [
+          "#312A1C",
+          "#634F24",
+          "#8D7034",
+          "#B89244",
+          "#C9AB6C",
+          "#D9C497",
+          "#E8DCC2",
+          "#F6F4EF"
+        ]
+      },
+      "tag-reliability": {
+        "role": "neutral",
+        "displayName": "Reliability Blue",
+        "canonical": "#7C9DB4",
+        "tonalRamp": [
+          "#20272C",
+          "#314756",
+          "#46657B",
+          "#5C84A0",
+          "#80A0B6",
+          "#A5BBCB",
+          "#CAD7E0",
+          "#F0F3F4"
+        ]
+      },
+      "tag-accountability": {
+        "role": "neutral",
+        "displayName": "Accountability Plum",
+        "canonical": "#9A7FA8",
+        "tonalRamp": [
+          "#28222B",
+          "#473750",
+          "#664E73",
+          "#856696",
+          "#A188AE",
+          "#BCAAC6",
+          "#D8CDDD",
+          "#F3F1F4"
+        ]
+      },
+      "tag-vault": {
+        "role": "neutral",
+        "displayName": "Vault Clay",
+        "canonical": "#BB7E5C",
+        "tonalRamp": [
+          "#30241D",
+          "#5F3C28",
+          "#885539",
+          "#B16F4A",
+          "#C48F72",
+          "#D5B09B",
+          "#E6D0C4",
+          "#F5F1EF"
+        ]
+      },
+      "tag-integrity": {
+        "role": "neutral",
+        "displayName": "Integrity Teal",
+        "canonical": "#5F9E97",
+        "tonalRamp": [
+          "#212C2B",
+          "#335450",
+          "#487973",
+          "#5E9D96",
+          "#82B4AE",
+          "#A6CAC6",
+          "#CBE0DD",
+          "#F0F4F4"
+        ]
+      },
+      "tag-nonjudgment": {
+        "role": "neutral",
+        "displayName": "Non-judgment Rose",
+        "canonical": "#BE8B93",
+        "tonalRamp": [
+          "#2D2022",
+          "#563036",
+          "#7C454E",
+          "#A15A65",
+          "#B77F87",
+          "#CCA4AA",
+          "#E1C9CD",
+          "#F4F0F1"
+        ]
+      },
+      "tag-generosity": {
+        "role": "neutral",
+        "displayName": "Generosity Sage",
+        "canonical": "#9AA064",
+        "tonalRamp": [
+          "#2B2C21",
+          "#505433",
+          "#737849",
+          "#969C60",
+          "#AEB383",
+          "#C6C9A7",
+          "#DDDFCB",
+          "#F4F4F0"
+        ]
       }
     },
     "motion": [
@@ -321,16 +426,83 @@
         "displayName": "Body",
         "purpose": "Descriptions (14px), feed reasons (15px, medium), inputs (16px)."
       },
-      "display": { "displayName": "Display", "purpose": "Home title only." },
-      "headline": { "displayName": "Headline", "purpose": "Person name atop the jar screen." },
+      "display": {
+        "displayName": "Display",
+        "purpose": "Home title only."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Person name atop the jar screen."
+      },
       "label": {
         "displayName": "Label",
         "purpose": "Uppercase eyebrows and section headers (1-2px tracking); sentence-case counts, chips, hints, meta."
       },
-      "title": { "displayName": "Title", "purpose": "Person names on home cards." }
+      "title": {
+        "displayName": "Title",
+        "purpose": "Person names on home cards."
+      }
     }
   },
   "generatedAt": "2026-10-03",
   "schemaVersion": 2,
-  "title": "Design System: Marble Jar"
+  "title": "Design System: Marble Jar",
+  "narrative": {
+    "northStar": "The Sunlit Shelf",
+    "overview": "This is a keepsake, not a dashboard. The system renders trust as a physical thing \u2014 a glass jar on warm paper, filling with amber marbles \u2014 and every visual decision serves that metaphor: sunlit neutrals, ink type, one glowing accent, surfaces that layer like paper rather than float like panels.\n\nAmber leads emotionally but never decorates chrome: it fills the jar, the progress bar, and every added marble, while ink and pine carry the actions. Seven muted tag hues share equal weight wherever a tag is referenced, and lightness never ranks.",
+    "keyCharacteristics": [
+      "Keepsake over dashboard: one jar per screen, generous whitespace, no dense data grids.",
+      "Amber belongs to the marbles: the accent marks trust itself, never buttons or borders.",
+      "Soft and tactile: generous radii (14\u201318px, pill chips), one soft card shadow, pressed-state dimming.",
+      "Layered paper: depth from tonal neutrals and hairlines, not elevation.",
+      "Honest record: removals and empty states are designed first-class, never hidden."
+    ],
+    "rules": [
+      {
+        "name": "The Amber Belongs to the Marbles Rule",
+        "body": "Amber (#E8A33D) marks marbles and their progress \u2014 jar fill, progress fill, added dots \u2014 and nothing else.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tags Share No Rank Rule",
+        "body": "The seven tag hues are categorical: similar weight, stable per tag, shared everywhere a tag is referenced. They never encode importance \u2014 lightness never ranks \u2014 and they never replace words.",
+        "section": "colors"
+      },
+      {
+        "name": "The Weight-Carries-Hierarchy Rule",
+        "body": "No custom fonts, no colored type for emphasis, no size below 12px.",
+        "section": "typography"
+      },
+      {
+        "name": "The Paper-Stack Rule",
+        "body": "Depth is tonal layering, not elevation. Nothing besides the person card lifts.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Soft Geometry Rule",
+        "body": "Everything a finger touches is round \u2014 14px controls, 18px containers, pill selections.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Vessel Has Weight Rule",
+        "body": "The jar is drawn, not decorated: 3px ink walls, 5px rim, cream glass, amber fill and shine inside it.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Keep amber on marbles and progress; ink/pine on actions.",
+      "Use the Sand steps in order for borders, fields, cards, dividers, tracks.",
+      "Set secondary text in cocoa/stone, never below 12px.",
+      "Give every touchable the pressed dim (opacity 0.75).",
+      "Write empty states as invitations, never blank space.",
+      "Keep removals visible with the \u25cb marker."
+    ],
+    "donts": [
+      "Don't put amber on buttons, borders, or decoration.",
+      "Don't add shadows beyond the person card.",
+      "Don't introduce a custom font, accent colors beyond the seven shared tag hues, or template blue (#2f95dc).",
+      "Don't invent testimonials, counts, or claims.",
+      "Don't sharpen corners below 14px on touchables or replace the jar vessel with a chart."
+    ]
+  }
 }

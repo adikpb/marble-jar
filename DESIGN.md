@@ -12,6 +12,13 @@ colors:
   stone: "#8A8478"
   pebble: "#A39E93"
   marble-faded: "#B9B2A1"
+  tag-boundaries: "#BE9A4E"
+  tag-reliability: "#7C9DB4"
+  tag-accountability: "#9A7FA8"
+  tag-vault: "#BB7E5C"
+  tag-integrity: "#5F9E97"
+  tag-nonjudgment: "#BE8B93"
+  tag-generosity: "#9AA064"
   sand-deep: "#E0D8C2"
   sand: "#E4DECF"
   sand-soft: "#E9E2D2"
@@ -116,6 +123,9 @@ Warm paper neutrals carry the surfaces, ink carries type and weight, and amber l
 ### Secondary
 - **Deep Pine** (#2E7D6F): the solid "+ Marble" action on the jar screen. The one green in the system, reserved for the act of adding trust.
 
+### Tags (shared identity)
+- **Muted categorical hues** (Boundaries #BE9A4E · Reliability #7C9DB4 · Accountability #9A7FA8 · Vault #BB7E5C · Integrity #5F9E97 · Non-judgment #BE8B93 · Generosity #9AA064): one stable hue per tag, applied everywhere a tag is referenced — split segments and legend dots, selector chips (10px dot), completion rows (marker), feed meta tag names — from the single `TAG_HUES` mapping in `lib/store.ts`. Equal visual weight by construction (mid-tone, mid-saturation, colorblind-spread); Untagged stays Faded Marble. Hues never touch buttons, type emphasis, or chrome, and hue never carries meaning alone — names are always announced in words.
+
 ### Neutral
 - **Warm Ink** (#1E1B16): primary type, dark button, jar outline, active chips. Near-black with warmth; the system's weight.
 - **Sunlit Paper** (#FAF7F0): page and header background on both screens. The shelf everything sits on.
@@ -129,6 +139,7 @@ Warm paper neutrals carry the surfaces, ink carries type and weight, and amber l
 
 ### Named Rules
 **The Amber Belongs to the Marbles Rule.** Amber (#E8A33D) marks marbles and their progress — jar fill, progress fill, added dots — and nothing else. It never backgrounds a button, borders a field, or decorates chrome; actions stay ink and pine. Its glow works because it is spent only on trust itself.
+**The Tags Share No Rank Rule.** The seven tag hues are categorical: similar weight, stable per tag, shared everywhere a tag is referenced. They never encode importance — lightness never ranks — and they never replace words: every tinted tag is still named in text.
 
 ## Typography
 
@@ -205,6 +216,6 @@ History rows: a 16px dot (amber ● added, Faded Marble ○ removed), reason in 
 ### Don't:
 - **Don't** put amber on buttons, borders, or decoration — it belongs to the marbles.
 - **Don't** add shadows beyond the person card or lift flat surfaces on hover.
-- **Don't** introduce a custom font, a new accent color, or template blue (#2f95dc) anywhere.
+- **Don't** introduce a custom font, accent colors beyond the seven shared tag hues, or template blue (#2f95dc) anywhere.
 - **Don't** invent testimonials, counts, or claims in new surfaces — PRODUCT.md's evidence rule binds design too.
 - **Don't** sharpen corners below 14px on touchables or replace the jar vessel with a chart.
