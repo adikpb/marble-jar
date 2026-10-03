@@ -1,0 +1,82 @@
+# marble-jar — single happy-path E2E flow (integration only, no unit tests).
+#
+# Runs against the web export by default. The app is exported with
+# `expo.experiments.baseUrl = "/marble-jar"`, so the exported files must sit in a
+# `marble-jar/` directory under the serve root:
+#   npx expo export --platform web --output-dir .expo/site/marble-jar
+#   npx serve .expo/site --listen 8081
+#   maestro test .maestro/*.yml
+#
+# Also works against the dev server (`npm run web`, which listens on 8081 and
+# serves the same /marble-jar base path), so the same flow covers local dev and
+# CI.
+#
+# Uses `url:` (not `appId:`) so Maestro drives the Chromium-based web driver.
+# Web support is Beta/Chromium-only.
+#
+# testIDs used (owned by the app lane):
+#   add-person-input   home: person name field
+#   add-person-button  home: "Add" button
+#   person-row         home: a person entry (opens /person/[id])
+#   jar-count          home row count "0/10 · 0%" and person count "0 / 10 marbles · 0%"
+#   marble-reason      person: reason field
+#   add-marble         person: "+ Marble" button
+# Persistence is localStorage on web, so a reload must keep state.
+url: http://localhost:8081/marble-jar
+name: Add a marble to a person and keep it after reload
+---
+- launchApp:
+    clearState: true
+
+# --- Add a person ------------------------------------------------------------
+- assertVisible:
+    id: add-person-input
+- tapOn:
+    id: add-person-input
+- inputText: Maya
+- hideKeyboard
+- tapOn:
+    id: add-person-button
+- assertVisible:
+    id: person-row
+    text: Maya
+- assertVisible:
+    id: jar-count
+    text: 0/10.*
+
+# --- Open the person ---------------------------------------------------------
+- tapOn:
+    id: person-row
+- assertVisible:
+    id: jar-count
+    text: 0\s/10\smarbles.*
+- assertVisible:
+    id: marble-reason
+
+# --- Add a marble with a reason ---------------------------------------------
+- tapOn:
+    id: marble-reason
+- inputText: remembered the small thing
+- hideKeyboard
+- tapOn:
+    id: add-marble
+
+# --- Count went 0 -> 1, reason is in the history -----------------------------
+- assertVisible:
+    id: jar-count
+    text: 1\s/10\smarbles.*
+- assertVisible: remembered the small thing
+
+# --- Reload without clearing state: state must persist -----------------------
+- launchApp:
+    clearState: false
+- runFlow:
+    when:
+      visible:
+        id: person-row
+    commands:
+      - tapOn:
+          id: person-row
+- assertVisible:
+    id: jar-count
+    text: 1\s/10\smarbles.*

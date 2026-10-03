@@ -1,0 +1,230 @@
+# Android APK release — pure GitHub Actions, no EAS.
+#
+# EAS was removed (see docs/android-release.md). There is no Play Store
+# submission: Android ships as a *release-signed* APK attached to a GitHub
+# Release. iOS users use the web/PWA build from GitHub Pages.
+#
+# Flow (push to main, or manual):
+#   prebuild  -> Continuous Native Generation writes android/ (gitignored,
+#                never committed)
+#   keystore  -> decode the release keystore from ANDROID_KEYSTORE_BASE64 into
+#                android/app/release.keystore
+#   signing   -> inject a `release` signingConfig into the generated
+#                android/app/build.gradle
+#   gradle    -> assembleRelease
+#   release   -> upload app-release.apk to the GitHub Release for tag
+#                v<version> where <version> is `expo.version` in app.json
+#
+# FOUR SECRETS: ANDROID_KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS,
+# KEY_PASSWORD. The keystore is decoded on the runner, used to sign, and
+# discarded — it never lands in a build output or artifact. Generate it once
+# with keytool; back it up; never commit it. See docs/android-release.md.
+# GITHUB_TOKEN is provided by default and needs no configuration; this
+# workflow declares `contents: write` for the Release upload.
+#
+# Because the signing key is stable, users upgrade in place — download the new
+# APK and install over the old one. The single exception is the one-time
+# migration off the old debug-signed APK, which requires an uninstall (that
+# deletes local app data). See docs/android-release.md.
+#
+# Versioning: there is no autoIncrement (that was EAS). `expo.version` in
+# app.json becomes versionName, and `expo.android.versionCode` (default 1)
+# becomes versionCode. Bump BOTH by hand before merging a release change —
+# Android refuses to install an APK whose versionCode is not higher than the
+# installed one. See docs/android-release.md.
+
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '22'
+  # React Native 0.86 / AGP compile against Java 17 bytecode.
+  JAVA_VERSION: '17'
+  # Ship arm64 + armv7 only: no x86 in sideloaded APKs worth the size.
+  # Add x86_64 here if you install on an emulator.
+  ANDROID_ARCHITECTURES: arm64-v8a,armeabi-v7a
+
+jobs:
+  apk:
+    name: Build release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses >/dev/null 2>&1 || true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Fail fast and loudly rather than 20 minutes into a gradle build with a
+      # confusing "storeFile was missing" error.
+      - name: Verify signing secrets are present
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in ANDROID_KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required repository secret(s): ${missing[*]}"
+            echo "See docs/android-release.md for the one-time keytool + secrets setup."
+            exit 1
+          fi
+          echo "all 4 signing secrets are present"
+
+      # Continuous Native Generation: android/ is generated here and is in
+      # .gitignore. Native config lives in app.json (plugins, package name,
+      # icons), so never edit or commit android/ by hand.
+      - name: Prebuild Android (CNG)
+        env:
+          EXPO_NO_DOCTOR: '1'
+        run: npx expo prebuild --platform android --clean --no-install
+
+      # Let AGP pull the compileSdk/NDK/buildTools versions declared by the
+      # Expo/RN plugins instead of hardcoding them here.
+      - name: Allow AGP to download SDK components
+        run: printf '\nandroid.builder.sdkDownload=true\n' >> android/gradle.properties
+
+      - name: Decode release keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
+          chmod 600 android/app/release.keystore
+          # Sanity check: it must be a real keystore holding the expected alias.
+          # Passwords come from the env so they never appear in the command line.
+          keytool -list -keystore android/app/release.keystore \
+            -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+
+      # android/ is generated, so the signing config has to be injected into
+      # the generated build.gradle on every run. Expo's template already
+      # declares signingConfigs { debug { ... } } and points buildTypes.release
+      # at signingConfigs.debug; add a release config and re-point it.
+      - name: Inject release signingConfig
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const file = 'android/app/build.gradle';
+          let g = fs.readFileSync(file, 'utf8');
+
+          if (!g.includes('signingConfigs {')) {
+            throw new Error('no signingConfigs block found in android/app/build.gradle');
+          }
+
+          // 1. Re-point buildTypes.release at the release signingConfig.
+          //    Done BEFORE inserting the config itself, while the only
+          //    `release {` block in the file is the buildType.
+          const before = g;
+          g = g.replace(
+            /(\n\s*release \{\n\s*)signingConfig\s+signingConfigs\.debug/,
+            '$1signingConfig signingConfigs.release',
+          );
+          if (g === before) {
+            throw new Error('buildTypes.release was not pointing at signingConfigs.debug');
+          }
+
+          // 2. Add the release signingConfig, reading secrets from the env so
+          //    no credential is ever written into the generated build.gradle.
+          const releaseConfig = [
+            'signingConfigs {',
+            '    release {',
+            "        storeFile file('release.keystore')",
+            "        storePassword System.getenv('KEYSTORE_PASSWORD')",
+            "        keyAlias System.getenv('KEY_ALIAS')",
+            "        keyPassword System.getenv('KEY_PASSWORD')",
+            '    }',
+            '',
+          ].join('\n');
+          g = g.replace('signingConfigs {', releaseConfig);
+
+          fs.writeFileSync(file, g);
+          console.log('release signingConfig injected');
+          NODE
+
+      - name: Assemble release APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon --stacktrace \
+          -PreactNativeArchitectures=${{ env.ANDROID_ARCHITECTURES }}
+
+      - name: Locate and verify APK
+        id: apk
+        run: |
+          set -euo pipefail
+          apk=$(ls android/app/build/outputs/apk/release/*.apk | head -n 1)
+          test -n "$apk"
+          echo "name=$apk" >> "$GITHUB_OUTPUT"
+          ls -lh "$apk"
+          # Sanity check: readable archive + the expected application id.
+          aapt2=$(ls -d "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -n 1)
+          "$aapt2" dump badging "$apk" | grep -E "^package:|application-label"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: marble-jar-apk
+          path: ${{ steps.apk.outputs.name }}
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Attach APK to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK_PATH: ${{ steps.apk.outputs.name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./app.json').expo.version")
+          tag="v${version}"
+          name=$(basename "$APK_PATH")
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "releasing into existing release $tag"
+          else
+            gh release create "$tag" --title "$tag" --generate-notes
+          fi
+          gh release upload "$tag" "$APK_PATH#${name}" --clobber
+          echo "published ${name} -> https://github.com/${GITHUB_REPOSITORY}/releases/tag/${tag}"

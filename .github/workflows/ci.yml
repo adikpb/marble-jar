@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  # Static preview server used by the Maestro web run.
+  # Matches the `url:` in .maestro/*.yml, so the same flows run against
+  # `npx expo start` locally.
+  WEB_PORT: '8081'
+  # `expo.experiments.baseUrl` makes `expo export` prefix every asset link with
+  # this path (same subpath GitHub Pages serves the site from). The export is
+  # placed in a directory of this name under the serve root, and the URL that
+  # gets probed matches the `url:` in .maestro/*.yml.
+  WEB_BASE_PATH: /marble-jar
+  MAESTRO_CLI_NO_ANALYTICS: '1'
+
+jobs:
+  quality:
+    name: Lint + typecheck + web export
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Biome (format + lint + organize imports)
+        run: npx @biomejs/biome ci .
+
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+      # Native (ios/android) jobs are intentionally omitted here: the Android
+      # APK is built in android.yml, and there is no iOS native build at all
+      # (no macOS runner, no Apple Developer account).
+      - name: Export web bundle
+        run: npx expo export --platform web --output-dir dist
+
+      - name: Upload web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: dist
+          retention-days: 7
+          if-no-files-found: error
+
+  e2e-web:
+    name: Maestro E2E (web)
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Exported into <serve-root>/marble-jar so the baseUrl-prefixed asset
+      # links resolve against a plain static server.
+      - name: Export web bundle
+        shell: bash
+        run: |
+          mkdir -p "${{ runner.temp }}/site${{ env.WEB_BASE_PATH }}"
+          npx expo export --platform web \
+            --output-dir "${{ runner.temp }}/site${{ env.WEB_BASE_PATH }}"
+
+      - name: Cache Maestro
+        id: cache-maestro
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/maestro-bin
+          key: maestro-${{ runner.os }}-${{ hashFiles('.maestro/*.yml') }}
+
+      - name: Install Maestro
+        if: steps.cache-maestro.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          mkdir -p "${{ runner.temp }}/maestro-bin"
+          # Cache the whole install (binary + bundled jars), not just the launcher.
+          cp -R "$HOME/.maestro/." "${{ runner.temp }}/maestro-bin/"
+
+      - name: Add Maestro to PATH
+        shell: bash
+        run: echo "${{ runner.temp }}/maestro-bin/bin" >> "$GITHUB_PATH"
+
+      # Maestro web support is Chromium-based and downloads a managed Chromium
+      # on first run; no system Chrome needed.
+      - name: Warm up Maestro web driver
+        shell: bash
+        run: maestro --version
+
+      - name: Serve exported web build
+        shell: bash
+        run: |
+          nohup npx --yes serve@14 "${{ runner.temp }}/site" \
+            --listen "${{ env.WEB_PORT }}" --no-clipboard \
+            >"${{ runner.temp }}/serve.log" 2>&1 &
+          echo "$!" > "${{ runner.temp }}/serve.pid"
+          for i in $(seq 1 90); do
+            if curl -fsS "http://localhost:${{ env.WEB_PORT }}${{ env.WEB_BASE_PATH }}/" >/dev/null 2>&1; then
+              echo "static server ready on ${{ env.WEB_PORT }}"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "static server did not become ready; log:" >&2
+          cat "${{ runner.temp }}/serve.log" >&2
+          exit 1
+
+      - name: Upload Maestro flow results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-report
+          path: ${{ runner.temp }}/maestro-logs
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Maestro tests (web)
+        shell: bash
+        run: |
+          maestro test .maestro/*.yml --format junit --output "${{ runner.temp }}/maestro-logs/results.xml"
+
+      - name: Stop static server
+        if: always()
+        shell: bash
+        run: kill "$(cat "${{ runner.temp }}/serve.pid")" 2>/dev/null || true

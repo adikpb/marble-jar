@@ -1,0 +1,29 @@
+# Local git hooks for marble-jar.
+# Install once:  npx lefthook install
+# Bypass hooks:  LEFTHOOK=0 git commit ...
+# Skip one hook: LEFTHOOK_FILE_CHANGES=none git commit ...  (pre-commit only)
+
+pre-commit:
+  parallel: true
+  commands:
+    biome:
+      glob: '*.{js,jsx,mjs,cjs,ts,tsx,json,jsonc}'
+      stage_fixed: true
+      fail_fast: false
+      run: npx @biomejs/biome check --write --no-errors-on-unmatched {staged_files}
+    tsc:
+      # Typecheck must see the whole project, so no glob/staging.
+      stage_fixed: false
+      run: npx tsc --noEmit
+
+commit-msg:
+  commands:
+    commitlint:
+      # {1} is the commit message file path.
+      run: npx --no -- commitlint --edit {1}
+
+pre-push:
+  commands:
+    export-web:
+      # Cheap smoke check: the web bundle must still export.
+      run: npx expo export --platform web --output-dir .expo/dist-smoke >/dev/null

@@ -1,0 +1,27 @@
+{
+  "name": "Marble Jar",
+  "short_name": "Marble Jar",
+  "description": "Keep the little people in your jar fed and happy.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "/marble-jar/",
+  "scope": "/marble-jar/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#1E1B16",
+  "background_color": "#FAF8F3",
+  "icons": [
+    {
+      "src": "/marble-jar/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/marble-jar/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
