@@ -168,9 +168,17 @@ jobs:
             -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
 
       # android/ is generated, so the signing config has to be injected into
-      # the generated build.gradle on every run. Expo's template already
-      # declares signingConfigs { debug { ... } } and points buildTypes.release
-      # at signingConfigs.debug; add a release config and re-point it.
+      # the generated build.gradle on every run. Expo's template ships
+      # `signingConfigs { debug { ... } }` and a buildTypes.release that
+      # points at signingConfigs.debug; add a release config and re-point it.
+      #
+      # Do NOT pattern-match `release {\n\s*signingConfig ...` here. On SDK 57
+      # the template puts two `//` comment lines between `release {` and its
+      # `signingConfig signingConfigs.debug` line, so that regex never matched
+      # and the step died with "buildTypes.release was not pointing at
+      # signingConfigs.debug". Instead, locate signingConfigs/buildTypes by
+      # brace matching and re-point whichever `signingConfig` line the release
+      # buildType actually has (or add one if it has none).
       - name: Inject release signingConfig
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -180,41 +188,110 @@ jobs:
           set -euo pipefail
           node <<'NODE'
           const fs = require('fs');
+
           const file = 'android/app/build.gradle';
           let g = fs.readFileSync(file, 'utf8');
 
-          if (!g.includes('signingConfigs {')) {
-            throw new Error('no signingConfigs block found in android/app/build.gradle');
+          // Blank out `//` comments *in place* (same length) so brace counting
+          // ignores them without shifting any index.
+          const scan = () => g.replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length));
+
+          // Brace-match a block from the index of its opening `{`.
+          function blockAt(openIdx, indent, name) {
+            const s = scan();
+            let depth = 0;
+            for (let i = openIdx; i < s.length; i++) {
+              if (s[i] === '{') depth++;
+              else if (s[i] === '}' && --depth === 0) return { name, open: openIdx, close: i, indent };
+            }
+            throw new Error(`unbalanced braces: ${name} { has no matching }`);
           }
 
-          // 1. Re-point buildTypes.release at the release signingConfig.
-          //    Done BEFORE inserting the config itself, while the only
-          //    `release {` block in the file is the buildType.
-          const before = g;
-          g = g.replace(
-            /(\n\s*release \{\n\s*)signingConfig\s+signingConfigs\.debug/,
-            '$1signingConfig signingConfigs.release',
+          // Find `<name> {` anchored at the start of a line, anywhere in the file.
+          function findBlock(name) {
+            const m = new RegExp('(^|\\n)([ \\t]*)\\b' + name + '\\s*\\{').exec(g);
+            return m ? blockAt(m.index + m[0].length - 1, m[2], name) : null;
+          }
+
+          // Find a `<name> {` inside an already-located block.
+          function findChild(parent, name) {
+            const m = new RegExp('(^|\\n)([ \\t]*)\\b' + name + '\\s*\\{').exec(
+              g.slice(parent.open + 1, parent.close),
+            );
+            if (!m) return null;
+            const base = parent.open + 1 + m.index;
+            return blockAt(base + m[0].length - 1, m[2], name);
+          }
+
+          // Indentation for a line inserted directly inside `block`.
+          const innerIndent = (block) => {
+            const m = /(?:^|\n)([ \t]+)\S/.exec(g.slice(block.open + 1, block.close));
+            return m ? m[1] : block.indent + '    ';
+          };
+
+          // Offset of the first character after the line holding `block.open`.
+          const firstInnerLine = (block) => {
+            const nl = g.indexOf('\n', block.open);
+            if (nl === -1) throw new Error(`${block.name} { has no closing line break`);
+            const rest = g.slice(block.open + 1, nl);
+            if (rest.trim() !== '') throw new Error(`unexpected text after ${block.name} { on the same line`);
+            return nl + 1;
+          };
+
+          const signingConfigs = findBlock('signingConfigs');
+          if (!signingConfigs) throw new Error(`no signingConfigs { block found in ${file}`);
+          const buildTypes = findBlock('buildTypes');
+          if (!buildTypes) throw new Error(`no buildTypes { block found in ${file}`);
+
+          const releaseBuildType = findChild(buildTypes, 'release');
+          if (!releaseBuildType) throw new Error(`no release buildType inside buildTypes { in ${file}`);
+
+          // 1. Point buildTypes.release at signingConfigs.release — replace
+          //    whatever signingConfig it currently has (debug, none, or an
+          //    already-injected release), else insert the line.
+          const current = /(^|\n)([ \t]*)signingConfig[^\n]*/.exec(
+            g.slice(releaseBuildType.open + 1, releaseBuildType.close),
           );
-          if (g === before) {
-            throw new Error('buildTypes.release was not pointing at signingConfigs.debug');
+          if (current) {
+            const base = releaseBuildType.open + 1 + current.index;
+            const from = base + current[1].length + current[2].length;
+            g =
+              g.slice(0, from) +
+              'signingConfig signingConfigs.release' +
+              g.slice(base + current[0].length);
+            console.log('re-pointed buildTypes.release at signingConfigs.release');
+          } else {
+            const at = firstInnerLine(releaseBuildType);
+            g =
+              g.slice(0, at) +
+              `${innerIndent(releaseBuildType)}signingConfig signingConfigs.release\n` +
+              g.slice(at);
+            console.log('added a signingConfig line to buildTypes.release');
           }
 
           // 2. Add the release signingConfig, reading secrets from the env so
           //    no credential is ever written into the generated build.gradle.
-          const releaseConfig = [
-            'signingConfigs {',
-            '    release {',
-            "        storeFile file('release.keystore')",
-            "        storePassword System.getenv('KEYSTORE_PASSWORD')",
-            "        keyAlias System.getenv('KEY_ALIAS')",
-            "        keyPassword System.getenv('KEY_PASSWORD')",
-            '    }',
-            '',
-          ].join('\n');
-          g = g.replace('signingConfigs {', releaseConfig);
+          //    Re-resolve the block: step 1 may have shifted offsets.
+          const configs = findBlock('signingConfigs');
+          if (findChild(configs, 'release')) {
+            console.log('signingConfigs already declares a release block — not injecting again');
+          } else {
+            const i = innerIndent(configs);
+            const blockText = [
+              `${i}release {`,
+              `${i}    storeFile file('release.keystore')`,
+              `${i}    storePassword System.getenv('KEYSTORE_PASSWORD')`,
+              `${i}    keyAlias System.getenv('KEY_ALIAS')`,
+              `${i}    keyPassword System.getenv('KEY_PASSWORD')`,
+              `${i}}`,
+              '',
+            ].join('\n');
+            const at = firstInnerLine(configs);
+            g = g.slice(0, at) + blockText + g.slice(at);
+            console.log('release signingConfig injected');
+          }
 
           fs.writeFileSync(file, g);
-          console.log('release signingConfig injected');
           NODE
 
       - name: Assemble release APK
