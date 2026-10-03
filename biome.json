@@ -13,6 +13,7 @@
       "!**/node_modules",
       "!**/.expo",
       "!**/.maestro",
+      "!**/.opencode",
       "!**/dist",
       "!**/build",
       "!**/coverage",

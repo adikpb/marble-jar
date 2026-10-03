@@ -1,0 +1,38 @@
+{
+  "$schema": "https://raw.githubusercontent.com/alvinunreal/oh-my-opencode-slim/refs/heads/master/oh-my-opencode-slim.schema.json",
+  "preset": "opencode",
+  "presets": {
+    "opencode": {
+      "orchestrator": {
+        "model": "opencode/muse-spark-1.3-contributor-free"
+      },
+      "oracle": {
+        "model": "opencode/muse-spark-1.3-contributor-free",
+        "variant": "xhigh",
+        "skills": ["simplify", "verification-planning"]
+      },
+      "explorer": {
+        "model": "opencode-go/longcat-2.5-preview-free"
+      },
+      "librarian": {
+        "model": "opencode-go/space-bunny-free",
+        "variant": "medium",
+        "skills": ["agent-browser"]
+      },
+      "designer": {
+        "model": "opencode/muse-spark-1.3-contributor-free",
+        "variant": "high",
+        "skills": ["impeccable"]
+      },
+      "fixer": {
+        "model": "opencode-go/space-bunny-free",
+        "variant": "high"
+      }
+    }
+  },
+  "disabled_agents": ["council", "observer"],
+  "autoUpdate": false,
+  "multiplexer": {
+    "type": "auto"
+  }
+}
