@@ -1,0 +1,682 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-03T21:46:31.928Z",
+  "title": "Design System: Marble Jar",
+  "source": "Written after the Lamplight revamp shipped. Extracted from constants/lamplight.ts, lib/store.ts, components/lamplight.tsx, app/index.tsx, app/person/[id].tsx, app/_layout.tsx.",
+  "extensions": {
+    "colorMeta": {
+      "ground": {
+        "role": "neutral",
+        "displayName": "Espresso Ground",
+        "canonical": "oklch(20.7% 0.023 37.8)",
+        "source": "constants/lamplight.ts Lamp",
+        "purpose": "Page canvas and the field fill on the shelf. Every screen's contentStyle.",
+        "tonalRamp": [
+          "#130805",
+          "#2e201c",
+          "#4b3c37",
+          "#6a5954",
+          "#8a7974",
+          "#ac9a94",
+          "#d2bfba",
+          "#fae6e0"
+        ]
+      },
+      "board": {
+        "role": "neutral",
+        "displayName": "Board",
+        "canonical": "oklch(24.7% 0.029 51.9)",
+        "source": "constants/lamplight.ts Lamp",
+        "purpose": "Shelf boards, the quick-log composer, the trend board, closed-chapter banners. One step up from the ground.",
+        "tonalRamp": [
+          "#150702",
+          "#2f2017",
+          "#4c3c32",
+          "#6b594f",
+          "#8c796e",
+          "#ae9a8e",
+          "#d4bfb4",
+          "#fce6da"
+        ]
+      },
+      "board-raised": {
+        "role": "neutral",
+        "displayName": "Board Raised",
+        "canonical": "oklch(28.0% 0.037 55.0)",
+        "source": "constants/lamplight.ts Lamp",
+        "purpose": "Selected state of a tag field — one step up from board.",
+        "tonalRamp": [
+          "#160700",
+          "#321f12",
+          "#4f3b2d",
+          "#6e584a",
+          "#8f7869",
+          "#b19989",
+          "#d8beae",
+          "#ffe5d5"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(36.0% 0.049 60.4)",
+        "source": "constants/lamplight.ts Lamp",
+        "purpose": "1px-3px borders, feed connector stems, the trend-to-split divider.",
+        "tonalRamp": [
+          "#190500",
+          "#351e09",
+          "#533a25",
+          "#725741",
+          "#937760",
+          "#b69880",
+          "#dcbda5",
+          "#ffe4cb"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "oklch(93.7% 0.033 83.7)",
+        "source": "constants/lamplight.ts Lamp",
+        "purpose": "Primary text on dark: names, counts, section headings, slip words.",
+        "tonalRamp": [
+          "#120a00",
+          "#2c2311",
+          "#483e2c",
+          "#675c48",
+          "#877c67",
+          "#a89d88",
+          "#cec3ac",
+          "#f6ead3"
+        ]
+      },
+      "ink-soft": {
+        "role": "neutral",
+        "displayName": "Ink Soft",
+        "canonical": "oklch(81.4% 0.059 77.1)",
+        "source": "constants/lamplight.ts Lamp",
+        "purpose": "Secondary text on dark: ledes, labels, ghost button text, vessel hint.",
+        "tonalRamp": [
+          "#180600",
+          "#341f00",
+          "#513b18",
+          "#705936",
+          "#917955",
+          "#b39a75",
+          "#dac09a",
+          "#ffe7c0"
+        ]
+      },
+      "ink-faint": {
+        "role": "neutral",
+        "displayName": "Ink Faint",
+        "canonical": "oklch(66.5% 0.056 73.3)",
+        "source": "constants/lamplight.ts Lamp",
+        "purpose": "Tertiary text on dark: placeholders, quiet buttons, empty states, sort labels.",
+        "tonalRamp": [
+          "#180600",
+          "#341f00",
+          "#523b1c",
+          "#715939",
+          "#927858",
+          "#b49a78",
+          "#dbbf9d",
+          "#ffe6c3"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "oklch(93.4% 0.035 85.4)",
+        "source": "constants/lamplight.ts Lamp",
+        "purpose": "The slip surface.",
+        "tonalRamp": [
+          "#120a00",
+          "#2c230f",
+          "#483e2a",
+          "#675c47",
+          "#877c66",
+          "#a89d86",
+          "#cfc3ab",
+          "#f6ead1"
+        ]
+      },
+      "paper-deep": {
+        "role": "neutral",
+        "displayName": "Paper Deep",
+        "canonical": "oklch(89.1% 0.048 83.9)",
+        "source": "constants/lamplight.ts Lamp",
+        "purpose": "The slip surface when the moment was a removal.",
+        "tonalRamp": [
+          "#140800",
+          "#2f2205",
+          "#4c3e21",
+          "#6a5c3e",
+          "#8b7b5d",
+          "#ad9c7d",
+          "#d3c2a2",
+          "#fae9c8"
+        ]
+      },
+      "paper-ink": {
+        "role": "neutral",
+        "displayName": "Paper Ink",
+        "canonical": "oklch(24.7% 0.030 65.6)",
+        "source": "constants/lamplight.ts Lamp",
+        "purpose": "Text and marks on paper: slip words, resting tag-field label and gloss.",
+        "tonalRamp": [
+          "#140801",
+          "#2e2114",
+          "#4b3d2f",
+          "#6a5a4c",
+          "#8a7a6b",
+          "#ac9b8b",
+          "#d2c1b0",
+          "#fae8d7"
+        ]
+      },
+      "cream": {
+        "role": "neutral",
+        "displayName": "Cream",
+        "canonical": "oklch(96.6% 0.024 85.8)",
+        "source": "constants/lamplight.ts Lamp",
+        "purpose": "Brightest step, reserved for text sitting on cherry.",
+        "tonalRamp": [
+          "#100a02",
+          "#292316",
+          "#453f31",
+          "#645d4e",
+          "#847d6d",
+          "#a59e8e",
+          "#cbc3b3",
+          "#f2eada"
+        ]
+      },
+      "shelf-edge": {
+        "role": "neutral",
+        "displayName": "Shelf Edge",
+        "canonical": "oklch(17.1% 0.020 48.1)",
+        "source": "constants/lamplight.ts Lamp",
+        "purpose": "The 5px bottom lip on a shelf board. Wood thickness, the only hard edge in the system.",
+        "tonalRamp": [
+          "#120905",
+          "#2c211c",
+          "#493d37",
+          "#685a54",
+          "#887a73",
+          "#aa9b94",
+          "#d0c1b9",
+          "#f7e8e0"
+        ]
+      },
+      "paper-soft": {
+        "role": "neutral",
+        "displayName": "Paper Soft",
+        "canonical": "oklch(46.7% 0.052 75.8)",
+        "source": "constants/lamplight.ts Lamp",
+        "purpose": "The small meta line on a slip (sequence, tag, day).",
+        "tonalRamp": [
+          "#170700",
+          "#322002",
+          "#503c1e",
+          "#6f5a3c",
+          "#90795a",
+          "#b29a7a",
+          "#d8c09f",
+          "#ffe7c5"
+        ]
+      },
+      "cherry": {
+        "role": "primary",
+        "displayName": "Cherry Magnet Red",
+        "canonical": "oklch(57.0% 0.171 32.9)",
+        "source": "constants/lamplight.ts Lamp",
+        "purpose": "Live actions only: + Kept one, Add, Save, the selected jar picker, the destructive confirm.",
+        "tonalRamp": [
+          "#390000",
+          "#5e0000",
+          "#830000",
+          "#a92509",
+          "#cf4b32",
+          "#f66f54",
+          "#ff9679",
+          "#ffbd9f"
+        ]
+      },
+      "cherry-deep": {
+        "role": "primary",
+        "displayName": "Cherry Deep",
+        "canonical": "oklch(48.1% 0.147 32.7)",
+        "source": "constants/lamplight.ts Lamp",
+        "purpose": "Second step of removing a person from the shelf. Used exactly once.",
+        "tonalRamp": [
+          "#330000",
+          "#570000",
+          "#7b0900",
+          "#a03420",
+          "#c55641",
+          "#eb7861",
+          "#ff9e86",
+          "#ffc5ab"
+        ]
+      },
+      "honey": {
+        "role": "secondary",
+        "displayName": "Honey Lamplight",
+        "canonical": "oklch(75.1% 0.130 79.8)",
+        "source": "constants/lamplight.ts Lamp",
+        "purpose": "Reporting, never acting: positive trend bars, the week staff, validation hints, the fallback marble hue.",
+        "tonalRamp": [
+          "#240000",
+          "#421400",
+          "#623300",
+          "#835200",
+          "#a57300",
+          "#c8942e",
+          "#f0ba59",
+          "#ffe181"
+        ]
+      },
+      "empty-ring": {
+        "role": "neutral",
+        "displayName": "Empty Ring",
+        "canonical": "oklch(32.8% 0.047 67.4)",
+        "source": "constants/lamplight.ts Lamp",
+        "purpose": "Stroke of an unfilled marble slot.",
+        "tonalRamp": [
+          "#180600",
+          "#331f08",
+          "#513b24",
+          "#705941",
+          "#91785f",
+          "#b39980",
+          "#d9bfa4",
+          "#ffe6ca"
+        ]
+      },
+      "tag-boundaries": {
+        "role": "data",
+        "displayName": "Brass",
+        "canonical": "oklch(70.4% 0.104 84.2)",
+        "source": "lib/store.ts TAG_HUES",
+        "purpose": "BRAVING hue. Glass and tag edges only — never chrome.",
+        "tonalRamp": [
+          "#1e0200",
+          "#3b1c00",
+          "#593900",
+          "#795700",
+          "#9a7728",
+          "#bd994d",
+          "#e4bf73",
+          "#ffe699"
+        ]
+      },
+      "tag-reliability": {
+        "role": "data",
+        "displayName": "Slate Blue",
+        "canonical": "oklch(67.9% 0.050 238.9)",
+        "source": "lib/store.ts TAG_HUES",
+        "purpose": "BRAVING hue. Glass and tag edges only — never chrome.",
+        "tonalRamp": [
+          "#000d1d",
+          "#072739",
+          "#254357",
+          "#436277",
+          "#628298",
+          "#82a3bb",
+          "#a7c9e1",
+          "#cdf1ff"
+        ]
+      },
+      "tag-accountability": {
+        "role": "data",
+        "displayName": "Mauve",
+        "canonical": "oklch(63.6% 0.068 314.0)",
+        "source": "lib/store.ts TAG_HUES",
+        "purpose": "BRAVING hue. Glass and tag edges only — never chrome.",
+        "tonalRamp": [
+          "#15011e",
+          "#30183a",
+          "#4d3459",
+          "#6c5278",
+          "#8c719a",
+          "#ae92bc",
+          "#d4b8e3",
+          "#fcdeff"
+        ]
+      },
+      "tag-vault": {
+        "role": "data",
+        "displayName": "Terracotta",
+        "canonical": "oklch(64.8% 0.090 49.7)",
+        "source": "lib/store.ts TAG_HUES",
+        "purpose": "BRAVING hue. Glass and tag edges only — never chrome.",
+        "tonalRamp": [
+          "#240000",
+          "#441100",
+          "#642f0a",
+          "#864d2c",
+          "#a86d4b",
+          "#cc8e6b",
+          "#f4b390",
+          "#ffdab6"
+        ]
+      },
+      "tag-integrity": {
+        "role": "data",
+        "displayName": "Teal",
+        "canonical": "oklch(65.5% 0.066 186.7)",
+        "source": "lib/store.ts TAG_HUES",
+        "purpose": "BRAVING hue. Glass and tag edges only — never chrome.",
+        "tonalRamp": [
+          "#001310",
+          "#002e29",
+          "#004b45",
+          "#296a64",
+          "#4b8a84",
+          "#6daca5",
+          "#92d3cb",
+          "#b9faf2"
+        ]
+      },
+      "tag-non-judgment": {
+        "role": "data",
+        "displayName": "Dusty Rose",
+        "canonical": "oklch(68.8% 0.063 8.4)",
+        "source": "lib/store.ts TAG_HUES",
+        "purpose": "BRAVING hue. Glass and tag edges only — never chrome.",
+        "tonalRamp": [
+          "#1f0006",
+          "#3c151e",
+          "#5c3139",
+          "#7d4e56",
+          "#9f6e76",
+          "#c28f97",
+          "#e9b4bc",
+          "#ffdae3"
+        ]
+      },
+      "tag-generosity": {
+        "role": "data",
+        "displayName": "Olive",
+        "canonical": "oklch(68.6% 0.082 113.2)",
+        "source": "lib/store.ts TAG_HUES",
+        "purpose": "BRAVING hue. Glass and tag edges only — never chrome.",
+        "tonalRamp": [
+          "#0d0d00",
+          "#252700",
+          "#404401",
+          "#5e6227",
+          "#7d8348",
+          "#9ea468",
+          "#c4ca8d",
+          "#ebf2b3"
+        ]
+      },
+      "tag-untagged": {
+        "role": "data",
+        "displayName": "Untagged Stone",
+        "canonical": "oklch(76.5% 0.025 88.3)",
+        "source": "lib/store.ts UNTAGGED_HUE",
+        "purpose": "What a marble wears when its tag is unrecognized, so no-tag never reads as a tag.",
+        "tonalRamp": [
+          "#0f0a02",
+          "#292316",
+          "#453f31",
+          "#635d4e",
+          "#837d6d",
+          "#a59e8d",
+          "#cbc4b2",
+          "#f2ebd9"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "The person's name as page title on the jar screen, 44px/46px. Also 30px for a shelf board's jar name."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "The shelf's opening question, 40px/42px. Also the native stack header title at 19px."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Section headings at 22px and week headers at 18px. No eyebrows or kickers exist in this world."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Karla 400 for all reading copy: fields at 16px, ledes 15px, meta and hints 12.5-14px."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Karla 600 for counts, field labels, chips and legends. Karla 700 at 15-16px is reserved for button labels so weight separates a tappable label from a static one."
+      },
+      "hand": {
+        "displayName": "Hand",
+        "purpose": "Caveat 600 for a moment's words on its slip (20px/24px) and the closing sign-off (24px). Nowhere else."
+      }
+    },
+    "shadows": [
+      {
+        "name": "pin",
+        "value": "0 2px 3px rgba(0,0,0,0.40)",
+        "elevation": 2,
+        "purpose": "Magnet pins on a slip and on a tag field. Smallest object, smallest falloff."
+      },
+      {
+        "name": "slip",
+        "value": "0 4px 10px rgba(0,0,0,0.35)",
+        "elevation": 3,
+        "purpose": "Paper slips. The workhorse — every moment in the history feed carries it."
+      },
+      {
+        "name": "board",
+        "value": "0 5px 14px rgba(0,0,0,0.40)",
+        "elevation": 3,
+        "purpose": "Shelf boards."
+      },
+      {
+        "name": "composer",
+        "value": "0 6px 16px rgba(0,0,0,0.40)",
+        "elevation": 4,
+        "purpose": "The shelf's quick-log composer and framed control groups."
+      },
+      {
+        "name": "vessel",
+        "value": "0 8px 18px rgba(0,0,0,0.45)",
+        "elevation": 4,
+        "purpose": "The glass jar — the tallest object, so the deepest falloff."
+      },
+      {
+        "name": "gloss",
+        "value": "inset highlight rgba(255,246,224,0.75) at 34% of the dot diameter, offset upper-left",
+        "purpose": "Not a shadow — the same lamp. Every filled marble dot wears one; unfilled slots get a 1.5px empty-ring stroke and no gloss."
+      }
+    ],
+    "motion": [
+      {
+        "name": "board-enter",
+        "value": "FadeInDown 420ms, 60ms stagger, capped at index 6",
+        "purpose": "Shelf boards arriving on the shelf screen. Reanimated defaults; no custom easing token exists."
+      },
+      {
+        "name": "marble-logged",
+        "value": "ZoomIn 380ms",
+        "purpose": "The single marble just logged, so a tap has a visible consequence."
+      },
+      {
+        "name": "signoff-enter",
+        "value": "FadeInDown 400ms",
+        "purpose": "The closing 'Small moments, collected.' at the end of the feed."
+      },
+      {
+        "name": "press",
+        "value": "opacity 0.75 (0.8 on tag fields), no duration token",
+        "purpose": "The only press feedback in the system. No scale, no ripple, no color shift."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "column-cap",
+        "value": "880px",
+        "purpose": "Both routes cap at maxWidth 880 and center. Above it the shelf reads as a bounded board; there are no other breakpoints — the layout is single-column at every width."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button — cherry",
+      "kind": "button",
+      "refersTo": "button-cherry",
+      "description": "A live action. Fills the whole surface with cherry; used for + Kept one, Add, and Save.",
+      "html": "<button class=\"ds-btn-cherry\">+ Kept one</button>",
+      "css": ".ds-btn-cherry { background: #C8452C; color: #FBF3E2; font-family: Karla, system-ui, sans-serif; font-size: 16px; font-weight: 700; border: none; border-radius: 14px; padding: 15px 0; width: 100%; cursor: pointer; transition: opacity 120ms; } .ds-btn-cherry:hover { opacity: 0.88; } .ds-btn-cherry:active { opacity: 0.75; } .ds-btn-cherry:focus-visible { outline: 2px solid #D9A441; outline-offset: 3px; }"
+    },
+    {
+      "name": "Ghost Button — hairline",
+      "kind": "button",
+      "refersTo": "button-hairline",
+      "description": "The honest equal of the primary in the add/remove pair. Never styled as failure — no red outline, no warning icon.",
+      "html": "<button class=\"ds-btn-ghost\">− Broke one</button>",
+      "css": ".ds-btn-ghost { background: transparent; color: #D8BE98; font-family: Karla, system-ui, sans-serif; font-size: 16px; font-weight: 700; border: 1.5px solid #503722; border-radius: 14px; padding: 15px 0; width: 100%; cursor: pointer; transition: opacity 120ms; } .ds-btn-ghost:hover { color: #F5E9D2; border-color: #6B4A2E; } .ds-btn-ghost:active { opacity: 0.75; } .ds-btn-ghost:focus-visible { outline: 2px solid #D9A441; outline-offset: 3px; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "A field is always one step darker than the surface it sits on. Focus is the caret plus ink text — no glow, no border shift.",
+      "html": "<input class=\"ds-field\" placeholder=\"What happened?\" />",
+      "css": ".ds-field { background: #211410; color: #F5E9D2; font-family: Karla, system-ui, sans-serif; font-size: 16px; border: 1px solid #503722; border-radius: 14px; padding: 13px 14px; width: 100%; box-sizing: border-box; } .ds-field::placeholder { color: #A98F6E; } .ds-field:hover { border-color: #6B4A2E; } .ds-field:focus { outline: none; border-color: #A98F6E; }"
+    },
+    {
+      "name": "BRAVING Tag Field",
+      "kind": "chip",
+      "refersTo": "tag-field",
+      "description": "Full-bleed hue field. Each row floods with its own hue at rest; the chosen row goes dark and keeps the hue as a lit edge. Shown with one tag's hue; every other tag swaps only the --hue value.",
+      "html": "<button class=\"ds-tagfield\" style=\"--hue:#5F9E97\">\n  <span class=\"ds-tagfield-name\">Integrity</span>\n  <span class=\"ds-tagfield-gloss\">Choose right over easy, even unseen.</span>\n  <span class=\"ds-tagfield-pin\"></span>\n</button>",
+      "css": ".ds-tagfield { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: var(--hue); color: #2B1E11; font-family: Karla, system-ui, sans-serif; border: 2px solid transparent; border-radius: 14px; padding: 10px 14px; height: 44px; box-sizing: border-box; cursor: pointer; } .ds-tagfield-name { font-size: 15px; font-weight: 700; } .ds-tagfield-gloss { flex: 1; font-size: 12.5px; } .ds-tagfield-pin { width: 14px; height: 14px; border-radius: 7px; background: rgba(43,30,17,0.55); box-shadow: 0 2px 3px rgba(0,0,0,0.4); } .ds-tagfield:hover { filter: brightness(1.06); } .ds-tagfield[aria-pressed='true'] { background: #372417; border-color: var(--hue); color: #F5E9D2; } .ds-tagfield[aria-pressed='true'] .ds-tagfield-gloss { color: #D8BE98; } .ds-tagfield[aria-pressed='true'] .ds-tagfield-pin { background: var(--hue); } .ds-tagfield:focus-visible { outline: 2px solid #D9A441; outline-offset: 3px; }"
+    },
+    {
+      "name": "Marble Dot",
+      "kind": "custom",
+      "refersTo": "marble-dot",
+      "description": "Fifteen slots make a jar at a glance. Filled slots wear the newest marbles' hues and a gloss; unfilled slots are a hairline ring. Shown at 15px (shelf) and 21px (inside the vessel).",
+      "html": "<div class=\"ds-marbles\" role=\"img\" aria-label=\"15 of 20 marbles\">\n  <span class=\"ds-marble\" style=\"--hue:#5F9E97\"></span>\n  <span class=\"ds-marble\" style=\"--hue:#BE8B93\"></span>\n  <span class=\"ds-marble\" style=\"--hue:#7C9DB4\"></span>\n  <span class=\"ds-marble\" style=\"--hue:#9AA064\"></span>\n  <span class=\"ds-marble\" style=\"--hue:#BB7E5C\"></span>\n  <span class=\"ds-marble ds-empty\"></span>\n  <span class=\"ds-marble ds-empty\"></span>\n</div>",
+      "css": ".ds-marbles { display: flex; flex-wrap: wrap; gap: 7px; } .ds-marble { position: relative; width: 15px; height: 15px; border-radius: 50%; overflow: hidden; background: var(--hue); } .ds-marble::after { content: ''; position: absolute; left: 16%; top: 12%; width: 34%; height: 34%; border-radius: 50%; background: rgba(255,246,224,0.75); } .ds-marble.ds-empty { background: transparent; border: 1.5px solid #453019; } .ds-marble.ds-empty::after { display: none; }"
+    },
+    {
+      "name": "Paper Slip",
+      "kind": "custom",
+      "refersTo": "slip",
+      "description": "One moment, one piece of paper: a magnet pin in the tag hue, the words in handwriting, a meta line. The only light-colored surface in the product.",
+      "html": "<div class=\"ds-slip\">\n  <span class=\"ds-slip-pin\" style=\"background:#5F9E97\"></span>\n  <p class=\"ds-slip-words\">Came back for the small thing I'd mentioned once</p>\n  <p class=\"ds-slip-meta\">+1 · Integrity · Mar 4</p>\n</div>",
+      "css": ".ds-slip { background: #F4E8CF; border-radius: 6px; padding: 10px 12px 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.35); } .ds-slip-pin { display: block; width: 13px; height: 13px; border-radius: 50%; margin-bottom: 6px; box-shadow: 0 2px 3px rgba(0,0,0,0.4); } .ds-slip-words { margin: 0; font-family: Caveat, cursive; font-size: 20px; line-height: 24px; color: #2B1E11; } .ds-slip-meta { margin: 4px 0 0; font-family: Karla, system-ui, sans-serif; font-size: 12px; color: #6B5638; } .ds-slip.ds-removed { background: #EAD9B8; opacity: 0.82; } .ds-slip.ds-removed .ds-slip-words { text-decoration: line-through; text-decoration-color: #8A6F45; }"
+    },
+    {
+      "name": "Shelf Board",
+      "kind": "card",
+      "refersTo": "jar-board",
+      "description": "One person's jar on the shelf: the name large, the count as a plain line, twenty dots. The 5px bottom lip is wood thickness, not a shadow.",
+      "html": "<div class=\"ds-board\">\n  <h3 class=\"ds-board-name\">Maya</h3>\n  <p class=\"ds-board-count\">15 of 20 · 75%</p>\n  <div class=\"ds-dots\"><span class=\"ds-marble\" style=\"--hue:#5F9E97\"></span><span class=\"ds-marble\" style=\"--hue:#BE8B93\"></span><span class=\"ds-marble\" style=\"--hue:#7C9DB4\"></span></div>\n  <div class=\"ds-board-actions\"><button class=\"ds-quiet\">Rename</button><button class=\"ds-quiet\">Remove</button></div>\n</div>",
+      "css": ".ds-board { background: #2C1D14; border: 1px solid #503722; border-bottom: 5px solid #170D08; border-radius: 20px; padding: 18px; margin-bottom: 14px; box-shadow: 0 5px 14px rgba(0,0,0,0.40); } .ds-board-name { margin: 0; font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-size: 30px; font-weight: 700; color: #F5E9D2; } .ds-board-count { margin: 2px 0 0; font-family: Karla, system-ui, sans-serif; font-size: 13.5px; font-weight: 600; color: #D8BE98; } .ds-dots { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; } .ds-board-actions { display: flex; gap: 14px; margin-top: 12px; } .ds-quiet { background: transparent; border: none; padding: 8px 6px; font-family: Karla, system-ui, sans-serif; font-size: 14px; font-weight: 600; color: #A98F6E; cursor: pointer; } .ds-quiet:hover { color: #D8BE98; } .ds-quiet:focus-visible { outline: 2px solid #D9A441; outline-offset: 2px; }"
+    },
+    {
+      "name": "Pill Toggle",
+      "kind": "chip",
+      "refersTo": "pill-toggle",
+      "description": "Sort, chapter and jar-picker chips. Selection fills with ink and inverts the label, so it reads as lamplight rather than as color.",
+      "html": "<button class=\"ds-pill ds-pill-on\">Recent</button>",
+      "css": ".ds-pill { background: transparent; color: #D8BE98; font-family: Karla, system-ui, sans-serif; font-size: 13.5px; font-weight: 600; border: 1.5px solid #503722; border-radius: 99px; padding: 9px 15px; cursor: pointer; transition: opacity 120ms, background 120ms; } .ds-pill:hover { border-color: #6B4A2E; } .ds-pill:active { opacity: 0.75; } .ds-pill:focus-visible { outline: 2px solid #D9A441; outline-offset: 3px; } .ds-pill.ds-pill-on { background: #F5E9D2; border-color: #F5E9D2; color: #211410; }"
+    },
+    {
+      "name": "Tag Dot Row",
+      "kind": "chip",
+      "refersTo": "pill-toggle",
+      "description": "The shelf composer's compact alternative to the full-bleed tag field: seven beads, no fill, the hue only ever as a 2px selected edge.",
+      "html": "<button class=\"ds-tagdot\" aria-pressed=\"true\"><span class=\"ds-tagdot-ball\" style=\"--hue:#5F9E97\"></span>Integrity</button>",
+      "css": ".ds-tagdot { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 2px solid transparent; border-radius: 99px; padding: 6px 9px; font-family: Karla, system-ui, sans-serif; font-size: 12.5px; font-weight: 600; color: #A98F6E; cursor: pointer; } .ds-tagdot:hover { color: #D8BE98; } .ds-tagdot:focus-visible { outline: 2px solid #D9A441; outline-offset: 2px; } .ds-tagdot-ball { width: 13px; height: 13px; border-radius: 50%; background: var(--hue); } .ds-tagdot[aria-pressed='true'] { border-color: var(--hue); color: #F5E9D2; }"
+    },
+    {
+      "name": "Week Chart",
+      "kind": "custom",
+      "refersTo": "trend-bar-up",
+      "description": "A bar chart, never a ring. Honey for a positive week, cherry for a negative one, a faint stub for an empty week. Appears only after two or more active weeks.",
+      "html": "<div class=\"ds-chart\">\n  <span class=\"ds-bar ds-bar-up\" style=\"height:96px\"></span>\n  <span class=\"ds-bar ds-bar-down\" style=\"height:34px\"></span>\n  <span class=\"ds-bar ds-bar-zero\"></span>\n  <span class=\"ds-bar ds-bar-up\" style=\"height:60px\"></span>\n</div>",
+      "css": ".ds-chart { display: flex; align-items: flex-end; gap: 10px; min-height: 120px; } .ds-bar { display: block; width: 20px; border-radius: 10px; } .ds-bar-up { background: #D9A441; } .ds-bar-down { background: #C8452C; } .ds-bar-zero { height: 4px; background: #A98F6E; opacity: 0.3; }"
+    },
+    {
+      "name": "Stack Header",
+      "kind": "nav",
+      "refersTo": null,
+      "description": "The native stack header: ground background, ink tint, no shadow. The board edge is the only divider in this world.",
+      "html": "<header class=\"ds-nav\"><span class=\"ds-nav-back\">‹</span><span class=\"ds-nav-title\">Jar</span></header>",
+      "css": ".ds-nav { display: flex; align-items: center; gap: 14px; background: #211410; padding: 10px 14px; } .ds-nav-back { font-family: Karla, system-ui, sans-serif; font-size: 34px; line-height: 34px; color: #F5E9D2; cursor: pointer; } .ds-nav-back:hover { color: #D8BE98; } .ds-nav-title { font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-size: 19px; font-weight: 700; color: #F5E9D2; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Lamplight Enamel",
+    "overview": "Every surface in this product is one material under one lamp: warm enamel in deep espresso, catching light from above and behind. The shelf screen is a wooden shelf in a kitchen after dark — boards of darker wood laid on a darker ground, each jar a name set large, each marble a small glossy bead of colored glass. The jar screen is the same room from closer in, and it adds the only light-colored objects in the product: paper slips pinned to the board, carrying a moment's words in handwriting. Nothing else in the interface is allowed to be light-colored. The contrast between espresso chrome and paper slips is the whole visual argument: chrome is the room, paper is the life in it.\n\nThe system is dark-only and deliberately single-tone. Hierarchy comes from three steps of warm off-white ink (ink → ink-soft → ink-faint) over two steps of wood (board over ground), plus hairline borders. No screen adds a color beyond those, with exactly two exceptions that carry meaning rather than decoration: cherry red is reserved for live actions, and the seven BRAVING hues appear only as glass — marble dots, chart bars, split-track segments, tag edges.\n\nDensity is domestic, not airy. The history feed on the jar screen keeps a collector's density: real slips, one after another, grouped under a week staff, with sequence numbers (+1 / −1) printed on each. There are no placeholder cards, no icon tiles, no skeletons. An empty state is a sentence of plain copy, not a graphic.",
+    "keyCharacteristics": [
+      "Espresso-and-paper: dark warm chrome, light paper slips, nothing between.",
+      "Three ink steps and two wood steps carry all hierarchy; hue never does.",
+      "Cherry red means \"this action is live\" — buttons and selection only.",
+      "The seven BRAVING hues are glass and tag edges, never chrome.",
+      "Circles for data (marbles, marks, pins), rounded rectangles for surfaces, near-square corners for paper.",
+      "Soft blurred black shadows as lamplight falloff; one hard wood edge per board.",
+      "Motion is arrival, not celebration: things fade and settle in."
+    ],
+    "rules": [
+      {
+        "name": "The Cherry Rule",
+        "body": "Cherry red fills the surface of a live action or a selected target — nothing else. It is never a border, a header, a heading, a divider, a data mark, or a decorative accent. If a screen shows no live action, it shows no cherry.",
+        "section": "colors"
+      },
+      {
+        "name": "The Glass Rule",
+        "body": "A BRAVING hue may appear as glass (marble dots, chart bars, split-track segments, legend dots, pins) or as the fill or lit edge of its own tag row. It may never color a board, a page, a header, a navigation element, a button, or a run of body text. Seven hues at once must never form a background.",
+        "section": "colors"
+      },
+      {
+        "name": "The Espresso Rule",
+        "body": "Every surface is a warm dark: ground, board, board-raised. There is no light theme and no neutral gray anywhere in the chrome. Light color means paper, and paper means a single moment's words.",
+        "section": "colors"
+      },
+      {
+        "name": "The Slip Rule",
+        "body": "A moment's words are always set in Caveat on paper. If a moment's reason is being read inside the chrome — never happens today — it would be a violation of the world, not a variant of it.",
+        "section": "typography"
+      },
+      {
+        "name": "The Three Ink Steps Rule",
+        "body": "Text on dark picks from exactly three inks: ink for what you read, ink-soft for what you scan, ink-faint for what is only there. Never introduce a fourth step or brighten an existing one for contrast.",
+        "section": "typography"
+      }
+    ],
+    "dos": [
+      "Do set a person's name in Bricolage Grotesque at 40–44px and let it carry the screen alone. Headings carry their own weight; there is no eyebrow, kicker, or overline anywhere in the product.",
+      "Do build hierarchy from ink → ink-soft → ink-faint and from board over ground before reaching for any other device.",
+      "Do give every Pressable an accessibilityRole, an accessibilityLabel that includes the count or state, and a hitSlop of at least 6px.",
+      "Do draw a removal as an honest mark: an open ring, a cherry down-bar, a darkened slip with struck-through words, and a −1 in the meta line.",
+      "Do reserve cherry for the surface of a live action or a selected target, and pair add/remove as two equal halves of one row.",
+      "Do fill a tag row with its own hue and keep the hue as the lit edge when the row is selected.",
+      "Do write a real sentence for empty states — \"The shelf is bare. Add someone above — the first marble is a small kept promise away.\"",
+      "Do keep the twenty-dot row and the count line as plain text; the jar's state is legible without a single chart."
+    ],
+    "donts": [
+      "Don't add a streak counter, score, achievement, progress ring, or leaderboard. The product's stated position is reflection over scoring; a count exists to be read, not graded.",
+      "Don't put a BRAVING hue on a board, header, button, or run of body text, and don't flood a surface with more than one tag hue.",
+      "Don't brighten the palette to fix a contrast problem. Fix it with the three ink steps, a hairline, or a shadow.",
+      "Don't render a moment's words in Karla, or a heading in Caveat. Chrome and handwriting never swap roles.",
+      "Don't use a hard offset shadow. The one hard edge in the system is a shelf board's 5px wood lip; everything else falls off with real blur.",
+      "Don't introduce a light theme or a neutral gray. userInterfaceStyle: automatic ships no light tokens, and it must stay that way.",
+      "Don't add icon-font or SVG glyphs. The product's only marks are circles, the typographic ‹, and the + / − on the log pair."
+    ]
+  },
+  "drift": {
+    "notCanonized": [
+      "Lamp.good (#7FB069) is defined in constants/lamplight.ts and referenced nowhere in the build. Recorded as an unused token, not as a system color; do not inherit it.",
+      "app.json adaptiveIcon backgroundColor #E6F4FE, the splash background #ffffff, app/+html.tsx body #FAF7F0, and public/manifest.json theme/background colors are pre-Lamplight light-shell values that never went dark. They are app-shell surfaces, not product screens, so they are recorded here as drift and not as tokens."
+    ]
+  }
+}

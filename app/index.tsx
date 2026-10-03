@@ -1,18 +1,29 @@
+// The shelf: every jar in the house, the week's fresh marbles, and a
+// composer fast enough to catch a moment before it cools.
 import { Link, useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import Animated, { FadeInDown } from "react-native-reanimated";
+import { MarbleDots, Slip } from "../components/lamplight";
+import { TAG_GLOSSES, TAG_ORDER } from "../constants/braving";
+import { Font, Lamp } from "../constants/lamplight";
 import {
+  addMarble,
   addPerson,
   getPeopleWithCounts,
   JAR_CAPACITY,
+  listMarbles,
+  type Marble,
   type Person,
   removePerson,
   renamePerson,
   type SortKey,
   searchPeople,
+  tagHue,
 } from "../lib/store";
 
 type Row = Person & { count: number; pct: number };
+type Fresh = { marble: Marble; name: string };
 
 const SORTS: { key: SortKey; short: string; label: string }[] = [
   { key: "recent", short: "Recent", label: "Sort by recent activity" },
@@ -20,18 +31,24 @@ const SORTS: { key: SortKey; short: string; label: string }[] = [
   { key: "name", short: "Name", label: "Sort by name" },
 ];
 
-// searchPeople arrives name-sorted; re-order client-side when the shelf is
-// set to fullest. ("recent" search goes through getPeopleWithCounts instead,
-// so true last-activity order holds there too.)
-function orderSearchRows(rows: Row[], sort: SortKey): Row[] {
-  if (sort === "fullest") {
-    return [...rows].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-  }
-  return rows;
+function dayLabel(ts: number): string {
+  const d = new Date(ts);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+  if (sameDay(d, today)) return "today";
+  if (sameDay(d, yesterday)) return "yesterday";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 export default function Home() {
   const [people, setPeople] = useState<Row[]>([]);
+  const [fresh, setFresh] = useState<Fresh[]>([]);
+  const [huesByPerson, setHuesByPerson] = useState<Map<string, string[]>>(new Map());
   const [name, setName] = useState("");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
@@ -39,20 +56,56 @@ export default function Home() {
   const [draft, setDraft] = useState("");
   const [confirmingRemoveId, setConfirmingRemoveId] = useState<string | null>(null);
   const [cardError, setCardError] = useState<{ id: string; message: string } | null>(null);
+  // Quick-log composer state
+  const [logPersonId, setLogPersonId] = useState<string | null>(null);
+  const [logReason, setLogReason] = useState("");
+  const [logTag, setLogTag] = useState("");
+  const [logHint, setLogHint] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       const q = query.trim();
+      let rows: Row[];
       if (q && sort !== "recent") {
-        setPeople(orderSearchRows(await searchPeople(q), sort));
-        return;
+        const found = await searchPeople(q);
+        rows =
+          sort === "fullest"
+            ? [...found].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+            : found;
+      } else {
+        const all = await getPeopleWithCounts(sort);
+        rows = q ? all.filter((p) => p.name.toLowerCase().includes(q.toLowerCase())) : all;
       }
-      const rows = await getPeopleWithCounts(sort);
-      setPeople(q ? rows.filter((p) => p.name.toLowerCase().includes(q.toLowerCase())) : rows);
+      setPeople(rows);
+      if (!logPersonId || !rows.some((r) => r.id === logPersonId)) {
+        setLogPersonId(rows[0]?.id ?? null);
+      }
+      // The week's ribbon + the hue of every shelf: newest marbles per jar.
+      const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      const per = await Promise.all(
+        rows.slice(0, 20).map(async (r) => {
+          const marbles = await listMarbles(r.id, { limit: 20 }).catch(() => []);
+          return { row: r, marbles };
+        }),
+      );
+      const hues = new Map<string, string[]>();
+      const allFresh: Fresh[] = [];
+      for (const { row, marbles } of per) {
+        hues.set(
+          row.id,
+          marbles.slice(0, row.count).map((m) => tagHue(m.bravingTag)),
+        );
+        for (const m of marbles) {
+          if (m.ts >= weekAgo) allFresh.push({ marble: m, name: row.name });
+        }
+      }
+      allFresh.sort((a, b) => b.marble.ts - a.marble.ts);
+      setHuesByPerson(hues);
+      setFresh(allFresh.slice(0, 6));
     } catch {
       // first-run DB errors surface as empty list; retry on focus
     }
-  }, [query, sort]);
+  }, [query, sort, logPersonId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -60,25 +113,34 @@ export default function Home() {
     }, [refresh]),
   );
 
-  // Live search with a light debounce so every keystroke isn't a store round-trip.
-  // (Deferred through setTimeout so the effect body never sets state synchronously.)
   useEffect(() => {
-    const t = setTimeout(
-      () => {
-        refresh();
-      },
-      query.trim() ? 250 : 0,
-    );
+    const t = setTimeout(() => refresh(), query.trim() ? 250 : 0);
     return () => clearTimeout(t);
   }, [query, refresh]);
 
   async function handleAdd() {
     if (!name.trim()) return;
-    await addPerson(name);
+    const person = await addPerson(name);
     setName("");
-    // Clear any search so the new jar is visible on the shelf right away.
     setQuery("");
     setCardError(null);
+    setLogPersonId(person.id);
+    await refresh();
+  }
+
+  async function handleQuickLog(delta: 1 | -1) {
+    if (!logPersonId) {
+      setLogHint("Add someone below first — a marble needs its jar.");
+      return;
+    }
+    if (!logReason.trim() || !logTag) {
+      setLogHint("Give the moment a few words and a BRAVING tag — every marble has a why.");
+      return;
+    }
+    await addMarble(logPersonId, delta, logReason, logTag);
+    setLogReason("");
+    setLogTag("");
+    setLogHint(null);
     await refresh();
   }
 
@@ -87,12 +149,10 @@ export default function Home() {
     setDraft(row.name);
     setCardError(null);
   }
-
   function cancelRename() {
     setEditingId(null);
     setDraft("");
   }
-
   async function saveRename(row: Row) {
     const next = draft.trim();
     if (!next || next === row.name) {
@@ -102,7 +162,6 @@ export default function Home() {
     try {
       await renamePerson(row.id, next);
     } catch {
-      // Inline error — the draft is preserved so nothing typed is lost.
       setCardError({ id: row.id, message: "Couldn't save that name. Please try again." });
       return;
     }
@@ -110,28 +169,10 @@ export default function Home() {
     setCardError(null);
     await refresh();
   }
-
-  function removeDetail(row: Row): string {
-    const noun = row.count === 1 ? "marble" : "marbles";
-    return row.count > 0
-      ? `Their jar holds ${row.count} ${noun} — every reason and tag goes with it. This can't be undone.`
-      : "Their jar is empty, so no marbles go with it — but they leave the shelf for good.";
-  }
-
-  function showRemoveConfirm(row: Row) {
-    setConfirmingRemoveId(row.id);
-    setCardError(null);
-  }
-
-  function cancelRemove() {
-    setConfirmingRemoveId(null);
-  }
-
   async function confirmRemove(row: Row) {
     try {
       await removePerson(row.id);
     } catch {
-      // Back to the plain footer with an inline error; the user can retry.
       setConfirmingRemoveId(null);
       setCardError({ id: row.id, message: "Couldn't remove that jar. Please try again." });
       return;
@@ -141,351 +182,560 @@ export default function Home() {
     await refresh();
   }
 
-  function renderRow(item: Row) {
+  const logPerson = useMemo(
+    () => people.find((p) => p.id === logPersonId) ?? null,
+    [people, logPersonId],
+  );
+  const logGloss = logTag ? (TAG_GLOSSES[logTag] ?? "") : "";
+  const q = query.trim();
+
+  function renderRow(item: Row, index: number) {
     const editing = editingId === item.id;
     const pct = Math.round(item.pct * 100);
+    const hues = huesByPerson.get(item.id) ?? [];
     return (
-      <View style={s.card}>
-        {editing ? (
-          <View>
-            <TextInput
-              testID="rename-person-input"
-              // Keep testID + nativeID in sync (see note on add-person-input).
-              nativeID="rename-person-input"
-              accessibilityLabel={`Rename ${item.name}`}
-              accessibilityHint="Edit the name, then press Save"
-              value={draft}
-              onChangeText={setDraft}
-              placeholder={item.name}
-              placeholderTextColor="#A39E93"
-              style={s.input}
-              returnKeyType="done"
-              onSubmitEditing={() => saveRename(item)}
-              autoFocus
-            />
-            <View style={s.track} accessible accessibilityLabel={`Jar ${pct} percent full`}>
-              <View style={[s.fill, { width: `${pct}%` }]} />
-            </View>
-            <View style={s.cardActions}>
-              <Pressable
-                testID="rename-save-button"
-                nativeID="rename-save-button"
-                accessibilityRole="button"
-                accessibilityLabel={`Save new name for ${item.name}`}
-                onPress={() => saveRename(item)}
-                hitSlop={8}
-                style={({ pressed }) => [s.saveBtn, pressed && s.pressed]}
-              >
-                <Text style={s.saveBtnText}>Save</Text>
-              </Pressable>
-              <Pressable
-                testID="rename-cancel-button"
-                nativeID="rename-cancel-button"
-                accessibilityRole="button"
-                accessibilityLabel={`Cancel renaming ${item.name}`}
-                onPress={cancelRename}
-                hitSlop={8}
-                style={({ pressed }) => [s.ghostBtn, pressed && s.pressed]}
-              >
-                <Text style={s.actionText}>Cancel</Text>
-              </Pressable>
-            </View>
-            {cardError?.id === item.id && (
-              <Text
-                testID="card-error"
-                nativeID="card-error"
-                accessibilityRole="alert"
-                style={s.cardError}
-              >
-                {cardError.message}
-              </Text>
-            )}
-          </View>
-        ) : (
-          <View>
-            <Link href={{ pathname: "/person/[id]", params: { id: item.id } }} asChild>
-              <Pressable
-                testID="person-row"
-                nativeID="person-row"
-                accessibilityRole="button"
-                accessibilityLabel={`${item.name}, ${item.count} of ${JAR_CAPACITY} marbles`}
-                style={({ pressed }) => [pressed && s.pressed]}
-              >
-                <View style={s.cardTop}>
-                  <Text style={s.cardName}>{item.name}</Text>
-                  <Text testID="jar-count" nativeID="jar-count" style={s.cardCount}>
-                    {item.count}/{JAR_CAPACITY} · {pct}%
-                  </Text>
-                </View>
-                <View style={s.track} accessible accessibilityLabel={`Jar ${pct} percent full`}>
-                  <View style={[s.fill, { width: `${pct}%` }]} />
-                </View>
-              </Pressable>
-            </Link>
-            {confirmingRemoveId === item.id ? (
-              <View style={s.confirmBox}>
-                <Text style={s.confirmText}>
-                  Remove {item.name}? {removeDetail(item)}
+      <Animated.View entering={FadeInDown.delay(Math.min(index, 6) * 60).duration(420)}>
+        <View style={s.board}>
+          {editing ? (
+            <View>
+              <TextInput
+                testID="rename-person-input"
+                nativeID="rename-person-input"
+                accessibilityLabel={`Rename ${item.name}`}
+                accessibilityHint="Edit the name, then press Save"
+                value={draft}
+                onChangeText={setDraft}
+                placeholder={item.name}
+                placeholderTextColor={Lamp.inkFaint}
+                style={s.field}
+                returnKeyType="done"
+                onSubmitEditing={() => saveRename(item)}
+              />
+              <View style={s.boardActions}>
+                <Pressable
+                  testID="rename-save-button"
+                  nativeID="rename-save-button"
+                  accessibilityRole="button"
+                  accessibilityLabel={`Save new name for ${item.name}`}
+                  onPress={() => saveRename(item)}
+                  hitSlop={8}
+                  style={({ pressed }) => [s.solidBtn, pressed && s.pressed]}
+                >
+                  <Text style={s.solidBtnText}>Save</Text>
+                </Pressable>
+                <Pressable
+                  testID="rename-cancel-button"
+                  nativeID="rename-cancel-button"
+                  accessibilityRole="button"
+                  accessibilityLabel={`Cancel renaming ${item.name}`}
+                  onPress={cancelRename}
+                  hitSlop={8}
+                  style={({ pressed }) => [s.quietBtn, pressed && s.pressed]}
+                >
+                  <Text style={s.quietBtnText}>Cancel</Text>
+                </Pressable>
+              </View>
+              {cardError?.id === item.id && (
+                <Text
+                  testID="card-error"
+                  nativeID="card-error"
+                  accessibilityRole="alert"
+                  style={s.error}
+                >
+                  {cardError.message}
                 </Text>
-                <View style={s.confirmActions}>
+              )}
+            </View>
+          ) : (
+            <View>
+              <Link href={{ pathname: "/person/[id]", params: { id: item.id } }} asChild>
+                <Pressable
+                  testID="person-row"
+                  nativeID="person-row"
+                  accessibilityRole="button"
+                  accessibilityLabel={`${item.name}, ${item.count} of ${JAR_CAPACITY} marbles`}
+                  style={({ pressed }) => [pressed && s.pressed]}
+                >
+                  <Text style={s.jarName} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                  <Text testID="jar-count" nativeID="jar-count" style={s.jarCount}>
+                    {item.count} of {JAR_CAPACITY} · {pct}%
+                  </Text>
+                  <View style={s.dots}>
+                    <MarbleDots count={item.count} hues={hues} />
+                  </View>
+                </Pressable>
+              </Link>
+              {confirmingRemoveId === item.id ? (
+                <View style={s.confirmBox}>
+                  <Text style={s.confirmText}>
+                    Lift {item.name} off the shelf?{" "}
+                    {item.count > 0
+                      ? `Their ${item.count} ${item.count === 1 ? "marble" : "marbles"} — every reason and tag — go with them. This can't be undone.`
+                      : "Their jar is empty, but they leave the shelf for good."}
+                  </Text>
+                  <View style={s.boardActions}>
+                    <Pressable
+                      testID="remove-confirm"
+                      nativeID="remove-confirm"
+                      accessibilityRole="button"
+                      accessibilityLabel={`Confirm removing ${item.name}`}
+                      onPress={() => confirmRemove(item)}
+                      hitSlop={8}
+                      style={({ pressed }) => [s.dangerBtn, pressed && s.pressed]}
+                    >
+                      <Text style={s.solidBtnText}>Remove</Text>
+                    </Pressable>
+                    <Pressable
+                      testID="remove-cancel"
+                      nativeID="remove-cancel"
+                      accessibilityRole="button"
+                      accessibilityLabel={`Cancel removing ${item.name}`}
+                      onPress={() => setConfirmingRemoveId(null)}
+                      hitSlop={8}
+                      style={({ pressed }) => [s.quietBtn, pressed && s.pressed]}
+                    >
+                      <Text style={s.quietBtnText}>Keep</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : (
+                <View style={s.boardActions}>
                   <Pressable
-                    testID="remove-cancel"
-                    nativeID="remove-cancel"
+                    testID="rename-person-button"
+                    nativeID="rename-person-button"
                     accessibilityRole="button"
-                    accessibilityLabel={`Cancel removing ${item.name}`}
-                    onPress={cancelRemove}
+                    accessibilityLabel={`Rename ${item.name}`}
+                    onPress={() => startRename(item)}
                     hitSlop={8}
-                    style={({ pressed }) => [s.ghostBtn, pressed && s.pressed]}
+                    style={({ pressed }) => [s.quietBtn, pressed && s.pressed]}
                   >
-                    <Text style={s.actionText}>Cancel</Text>
+                    <Text style={s.quietBtnText}>Rename</Text>
                   </Pressable>
                   <Pressable
-                    testID="remove-confirm"
-                    nativeID="remove-confirm"
+                    testID="remove-person-button"
+                    nativeID="remove-person-button"
                     accessibilityRole="button"
-                    accessibilityLabel={`Confirm removing ${item.name}`}
-                    accessibilityHint={`Deletes their jar and all ${item.count} marbles`}
-                    onPress={() => confirmRemove(item)}
+                    accessibilityLabel={`Remove ${item.name}`}
+                    onPress={() => {
+                      setConfirmingRemoveId(item.id);
+                      setCardError(null);
+                    }}
                     hitSlop={8}
-                    style={({ pressed }) => [s.saveBtn, pressed && s.pressed]}
+                    style={({ pressed }) => [s.quietBtn, pressed && s.pressed]}
                   >
-                    <Text style={s.saveBtnText}>Remove</Text>
+                    <Text style={s.quietBtnText}>Remove</Text>
                   </Pressable>
                 </View>
-              </View>
-            ) : (
-              <View style={s.cardActions}>
-                <Pressable
-                  testID="rename-person-button"
-                  nativeID="rename-person-button"
-                  accessibilityRole="button"
-                  accessibilityLabel={`Rename ${item.name}`}
-                  onPress={() => startRename(item)}
-                  hitSlop={8}
-                  style={({ pressed }) => [s.ghostBtn, pressed && s.pressed]}
+              )}
+              {cardError?.id === item.id && (
+                <Text
+                  testID="card-error"
+                  nativeID="card-error"
+                  accessibilityRole="alert"
+                  style={s.error}
                 >
-                  <Text style={s.actionText}>Rename</Text>
-                </Pressable>
-                <Pressable
-                  testID="remove-person-button"
-                  nativeID="remove-person-button"
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remove ${item.name}`}
-                  accessibilityHint={`Deletes their jar and all ${item.count} marbles`}
-                  onPress={() => showRemoveConfirm(item)}
-                  hitSlop={8}
-                  style={({ pressed }) => [s.ghostBtn, pressed && s.pressed]}
-                >
-                  <Text style={s.removeText}>Remove</Text>
-                </Pressable>
-              </View>
-            )}
-            {cardError?.id === item.id && (
-              <Text
-                testID="card-error"
-                nativeID="card-error"
-                accessibilityRole="alert"
-                style={s.cardError}
-              >
-                {cardError.message}
-              </Text>
-            )}
-          </View>
-        )}
-      </View>
+                  {cardError.message}
+                </Text>
+              )}
+            </View>
+          )}
+        </View>
+      </Animated.View>
     );
   }
 
-  const q = query.trim();
-
   return (
-    <View style={s.page}>
-      <Text style={s.eyebrow} accessibilityRole="header">
-        Small moments, collected
-      </Text>
-      <Text style={s.title}>Whose jar are you filling?</Text>
-      <Text style={s.sub}>
-        Trust is a marble jar — every kept promise adds a marble. A full jar is {JAR_CAPACITY}{" "}
-        marbles.
-      </Text>
+    <FlatList
+      data={people}
+      keyboardShouldPersistTaps="handled"
+      keyExtractor={(p) => p.id}
+      contentContainerStyle={s.page}
+      ListHeaderComponent={
+        <View>
+          <Text style={s.title} accessibilityRole="header">
+            Whose jar are you filling?
+          </Text>
+          <Text style={s.lede}>
+            Small moments, collected. Trust is a marble jar — every kept promise adds a marble,
+            every broken one takes one away.
+          </Text>
 
-      <View style={s.addRow}>
-        <TextInput
-          testID="add-person-input"
-          // Maestro's web driver derives `resource-id` from the first of
-          // id / aria-label / name / title / for / data-testid that exists.
-          // `aria-label` (accessibilityLabel) wins over `data-testid`, so
-          // `nativeID` — which react-native-web renders as the DOM `id` — is
-          // required for `id: add-person-input` to resolve. Keep it in sync
-          // with testID.
-          nativeID="add-person-input"
-          accessibilityLabel="Person name"
-          accessibilityHint="Type a name, then press Add"
-          value={name}
-          onChangeText={setName}
-          placeholder="Add someone… e.g. Maya"
-          placeholderTextColor="#A39E93"
-          style={s.input}
-          returnKeyType="done"
-          onSubmitEditing={handleAdd}
-        />
-        <Pressable
-          testID="add-person-button"
-          nativeID="add-person-button"
-          accessibilityRole="button"
-          accessibilityLabel="Add person"
-          onPress={handleAdd}
-          style={({ pressed }) => [s.addBtn, pressed && s.pressed]}
-        >
-          <Text style={s.addBtnText}>Add</Text>
-        </Pressable>
-      </View>
+          <View style={s.composer}>
+            <Text style={s.composerTitle}>Log a moment</Text>
+            {people.length > 0 ? (
+              <View style={s.pickerRow}>
+                {people.map((p) => {
+                  const on = p.id === logPersonId;
+                  return (
+                    <Pressable
+                      key={p.id}
+                      testID={`quick-pick-${p.id}`}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: on }}
+                      accessibilityLabel={`Log for ${p.name}`}
+                      onPress={() => {
+                        setLogPersonId(p.id);
+                        setLogHint(null);
+                      }}
+                      style={({ pressed }) => [s.pick, on && s.pickOn, pressed && s.pressed]}
+                    >
+                      <Text style={[s.pickText, on && s.pickTextOn]} numberOfLines={1}>
+                        {p.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+            <TextInput
+              testID="quick-reason"
+              nativeID="quick-reason"
+              accessibilityLabel="What happened?"
+              accessibilityHint="A few words about the moment"
+              value={logReason}
+              onChangeText={(t) => {
+                setLogReason(t);
+                setLogHint(null);
+              }}
+              placeholder={logPerson ? `What happened with ${logPerson.name}?` : "What happened?"}
+              placeholderTextColor={Lamp.inkFaint}
+              style={s.field}
+              returnKeyType="done"
+            />
+            <View style={s.dotRow}>
+              {TAG_ORDER.map((t) => {
+                const on = logTag === t;
+                return (
+                  <Pressable
+                    key={t}
+                    testID={`quick-tag-${t}`}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: on }}
+                    accessibilityLabel={TAG_GLOSSES[t] ? `${t}. ${TAG_GLOSSES[t]}` : t}
+                    onPress={() => {
+                      setLogTag(on ? "" : t);
+                      setLogHint(null);
+                    }}
+                    hitSlop={6}
+                    style={({ pressed }) => [
+                      s.dotPick,
+                      on && { borderColor: tagHue(t) },
+                      pressed && s.pressed,
+                    ]}
+                  >
+                    <View style={[s.dotBall, { backgroundColor: tagHue(t) }]} />
+                    <Text style={[s.dotName, on && s.dotNameOn]}>{t}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            {!!logGloss && <Text style={s.glossLine}>{logGloss}</Text>}
+            <View style={s.logRow}>
+              <Pressable
+                testID="quick-remove"
+                nativeID="quick-remove"
+                accessibilityRole="button"
+                accessibilityLabel="Log a broken promise"
+                onPress={() => handleQuickLog(-1)}
+                style={({ pressed }) => [s.removeBtn, pressed && s.pressed]}
+              >
+                <Text style={s.removeBtnText}>− Broke one</Text>
+              </Pressable>
+              <Pressable
+                testID="quick-add"
+                nativeID="quick-add"
+                accessibilityRole="button"
+                accessibilityLabel="Log a kept promise"
+                onPress={() => handleQuickLog(1)}
+                style={({ pressed }) => [s.keptBtn, pressed && s.pressed]}
+              >
+                <Text style={s.keptBtnText}>+ Kept one</Text>
+              </Pressable>
+            </View>
+            {!!logHint && (
+              <Text testID="quick-hint" style={s.hint} accessibilityRole="alert">
+                {logHint}
+              </Text>
+            )}
+          </View>
 
-      <TextInput
-        testID="search-person-input"
-        nativeID="search-person-input"
-        accessibilityLabel="Search people by name"
-        accessibilityHint="Type a name to filter the shelf"
-        value={query}
-        onChangeText={setQuery}
-        placeholder="Search jars…"
-        placeholderTextColor="#A39E93"
-        style={[s.input, s.searchInput]}
-        returnKeyType="search"
-        clearButtonMode="while-editing"
-      />
+          {fresh.length > 0 && (
+            <View style={s.week}>
+              <Text style={s.weekTitle}>This week on the shelf</Text>
+              {fresh.map(({ marble, name: who }) => (
+                <View key={marble.id} style={s.weekSlip}>
+                  <Slip
+                    reason={marble.reason}
+                    fallback={marble.delta > 0 ? "Marble added" : "Marble removed"}
+                    hue={tagHue(marble.bravingTag)}
+                    removed={marble.delta < 0}
+                    meta={`${who} · ${marble.bravingTag || "untagged"} · ${dayLabel(marble.ts)}`}
+                  />
+                </View>
+              ))}
+            </View>
+          )}
 
-      <View style={s.sortRow}>
-        {SORTS.map((o) => {
-          const on = sort === o.key;
-          return (
+          <View style={s.addRow}>
+            <TextInput
+              testID="add-person-input"
+              nativeID="add-person-input"
+              accessibilityLabel="Person name"
+              accessibilityHint="Type a name, then press Add"
+              value={name}
+              onChangeText={setName}
+              placeholder="Add someone… e.g. Maya"
+              placeholderTextColor={Lamp.inkFaint}
+              style={[s.field, s.addField]}
+              returnKeyType="done"
+              onSubmitEditing={handleAdd}
+            />
             <Pressable
-              key={o.key}
-              testID={`sort-${o.key}`}
-              nativeID={`sort-${o.key}`}
+              testID="add-person-button"
+              nativeID="add-person-button"
               accessibilityRole="button"
-              accessibilityLabel={o.label}
-              accessibilityState={{ selected: on }}
-              onPress={() => setSort(o.key)}
-              style={({ pressed }) => [s.chip, on && s.chipOn, pressed && s.pressed]}
+              accessibilityLabel="Add person"
+              onPress={handleAdd}
+              style={({ pressed }) => [s.solidBtn, s.addBtn, pressed && s.pressed]}
             >
-              <Text style={[s.chipText, on && s.chipTextOn]}>{o.short}</Text>
+              <Text style={s.solidBtnText}>Add</Text>
             </Pressable>
-          );
-        })}
-      </View>
+          </View>
 
-      <FlatList
-        data={people}
-        keyExtractor={(p) => p.id}
-        contentContainerStyle={s.list}
-        ListEmptyComponent={
-          q ? (
-            <Text testID="empty-state" nativeID="empty-state" style={s.empty}>
-              No jars match “{q}”. Try another name.
-            </Text>
-          ) : (
-            <Text testID="empty-state" nativeID="empty-state" style={s.empty}>
-              No jars yet. Add someone above to drop in the first marble.
-            </Text>
-          )
-        }
-        renderItem={({ item }) => renderRow(item)}
-      />
-    </View>
+          <TextInput
+            testID="search-person-input"
+            nativeID="search-person-input"
+            accessibilityLabel="Search people by name"
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search jars…"
+            placeholderTextColor={Lamp.inkFaint}
+            style={[s.field, s.searchField]}
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+          />
+
+          <View style={s.sortRow}>
+            {SORTS.map((o) => {
+              const on = sort === o.key;
+              return (
+                <Pressable
+                  key={o.key}
+                  testID={`sort-${o.key}`}
+                  nativeID={`sort-${o.key}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={o.label}
+                  accessibilityState={{ selected: on }}
+                  onPress={() => setSort(o.key)}
+                  style={({ pressed }) => [s.sort, on && s.sortOn, pressed && s.pressed]}
+                >
+                  <Text style={[s.sortText, on && s.sortTextOn]}>{o.short}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      }
+      ListEmptyComponent={
+        q ? (
+          <Text testID="empty-state" nativeID="empty-state" style={s.empty}>
+            No jars match “{q}”. Try another name.
+          </Text>
+        ) : (
+          <Text testID="empty-state" nativeID="empty-state" style={s.empty}>
+            The shelf is bare. Add someone above — the first marble is a small kept promise away.
+          </Text>
+        )
+      }
+      renderItem={({ item, index }) => renderRow(item, index)}
+    />
   );
 }
 
 const s = StyleSheet.create({
-  page: { flex: 1, padding: 20, paddingTop: 28, backgroundColor: "#FAF7F0" },
-  eyebrow: {
-    fontSize: 12,
-    letterSpacing: 2,
-    textTransform: "uppercase",
-    color: "#8A8478",
-    fontWeight: "600",
+  page: {
+    padding: 20,
+    paddingTop: 26,
+    paddingBottom: 56,
+    backgroundColor: Lamp.ground,
+    maxWidth: 880,
+    width: "100%",
+    alignSelf: "center",
   },
-  title: { fontSize: 30, fontWeight: "800", color: "#1E1B16", marginTop: 6 },
-  sub: { fontSize: 14, lineHeight: 20, color: "#5C564A", marginTop: 8, marginBottom: 16 },
-  addRow: { flexDirection: "row", gap: 10, marginBottom: 8 },
-  input: {
-    flex: 1,
-    backgroundColor: "#fff",
+  title: {
+    fontFamily: Font.display,
+    fontSize: 40,
+    lineHeight: 42,
+    color: Lamp.ink,
+    letterSpacing: -0.01,
+  },
+  lede: { fontFamily: Font.body, fontSize: 15, lineHeight: 22, color: Lamp.inkSoft, marginTop: 10 },
+  composer: {
+    backgroundColor: Lamp.board,
     borderWidth: 1,
-    borderColor: "#E4DECF",
+    borderColor: Lamp.hairline,
+    borderRadius: 20,
+    padding: 16,
+    marginTop: 18,
+    shadowColor: "#000",
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
+  },
+  composerTitle: { fontFamily: Font.display, fontSize: 22, color: Lamp.ink },
+  pickerRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
+  pick: {
+    borderWidth: 1.5,
+    borderColor: Lamp.hairline,
+    borderRadius: 99,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    maxWidth: 150,
+  },
+  pickOn: { backgroundColor: Lamp.cherry, borderColor: Lamp.cherry },
+  pickText: { fontFamily: Font.bodySemi, fontWeight: "600", fontSize: 14, color: Lamp.inkSoft },
+  pickTextOn: { color: Lamp.cream },
+  field: {
+    backgroundColor: Lamp.ground,
+    borderWidth: 1,
+    borderColor: Lamp.hairline,
     borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 13,
     fontSize: 16,
-    color: "#1E1B16",
+    fontFamily: Font.body,
+    color: Lamp.ink,
+    marginTop: 12,
   },
-  searchInput: { flex: 0, marginBottom: 10 },
-  sortRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 4 },
-  chip: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#E0D8C2",
+  dotRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 12 },
+  dotPick: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderWidth: 2,
+    borderColor: "transparent",
     borderRadius: 99,
-    paddingHorizontal: 13,
-    paddingVertical: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
   },
-  chipOn: { backgroundColor: "#1E1B16", borderColor: "#1E1B16" },
-  chipText: { color: "#5C564A", fontWeight: "600", fontSize: 13 },
-  chipTextOn: { color: "#FAF7F0" },
-  addBtn: {
-    backgroundColor: "#1E1B16",
+  dotBall: { width: 13, height: 13, borderRadius: 6.5 },
+  dotName: { fontFamily: Font.bodySemi, fontWeight: "600", fontSize: 12.5, color: Lamp.inkFaint },
+  dotNameOn: { color: Lamp.ink },
+  glossLine: {
+    fontFamily: Font.body,
+    fontSize: 13,
+    lineHeight: 18,
+    color: Lamp.inkSoft,
+    marginTop: 8,
+  },
+  logRow: { flexDirection: "row", gap: 10, marginTop: 12 },
+  keptBtn: {
+    flex: 1,
+    backgroundColor: Lamp.cherry,
     borderRadius: 14,
+    paddingVertical: 15,
+    alignItems: "center",
+  },
+  keptBtnText: { color: Lamp.cream, fontFamily: Font.bodyBold, fontWeight: "700", fontSize: 16 },
+  removeBtn: {
+    flex: 1,
+    borderRadius: 14,
+    paddingVertical: 15,
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: Lamp.hairline,
+  },
+  removeBtnText: {
+    color: Lamp.inkSoft,
+    fontFamily: Font.bodyBold,
+    fontWeight: "700",
+    fontSize: 16,
+  },
+  hint: { fontFamily: Font.body, fontSize: 13, lineHeight: 18, color: Lamp.honey, marginTop: 10 },
+  week: { marginTop: 22 },
+  weekTitle: { fontFamily: Font.display, fontSize: 22, color: Lamp.ink, marginBottom: 10 },
+  weekSlip: { marginBottom: 10 },
+  addRow: { flexDirection: "row", gap: 10, marginTop: 22, alignItems: "center" },
+  addField: { flex: 1, marginTop: 0 },
+  addBtn: { paddingHorizontal: 22, paddingVertical: 14 },
+  solidBtn: {
+    backgroundColor: Lamp.cherry,
+    borderRadius: 14,
+    paddingVertical: 10,
     paddingHorizontal: 20,
     justifyContent: "center",
   },
-  addBtnText: { color: "#FAF7F0", fontWeight: "700", fontSize: 15 },
-  pressed: { opacity: 0.75 },
-  list: { paddingTop: 12, paddingBottom: 40, gap: 12 },
-  empty: { color: "#8A8478", fontSize: 14, lineHeight: 20, marginTop: 24, textAlign: "center" },
-  card: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#E9E2D2",
-    borderRadius: 18,
-    padding: 16,
-    shadowColor: "#1E1B16",
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+  solidBtnText: { color: Lamp.cream, fontFamily: Font.bodyBold, fontWeight: "700", fontSize: 15 },
+  quietBtn: { paddingVertical: 8, paddingHorizontal: 6 },
+  quietBtnText: {
+    fontFamily: Font.bodySemi,
+    fontWeight: "600",
+    fontSize: 14,
+    color: Lamp.inkFaint,
   },
-  cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline" },
-  cardName: { fontSize: 19, fontWeight: "700", color: "#1E1B16" },
-  cardCount: { fontSize: 13, fontWeight: "600", color: "#8A8478" },
-  track: {
-    height: 10,
-    borderRadius: 99,
-    backgroundColor: "#F0EAD9",
-    marginTop: 12,
-    overflow: "hidden",
-  },
-  fill: { height: "100%", backgroundColor: "#E8A33D", borderRadius: 99 },
-  cardActions: { flexDirection: "row", gap: 8, marginTop: 12 },
-  ghostBtn: { paddingVertical: 6, paddingHorizontal: 4 },
-  actionText: { fontSize: 13, fontWeight: "600", color: "#8A8478" },
-  removeText: { fontSize: 13, fontWeight: "600", color: "#5C564A" },
-  saveBtn: {
-    backgroundColor: "#1E1B16",
+  dangerBtn: {
+    backgroundColor: Lamp.cherryDeep,
     borderRadius: 14,
-    paddingVertical: 8,
-    paddingHorizontal: 18,
-    justifyContent: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 20,
   },
-  saveBtnText: { color: "#FAF7F0", fontWeight: "700", fontSize: 13 },
+  searchField: { marginTop: 10 },
+  sortRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10, marginBottom: 14 },
+  sort: {
+    borderWidth: 1.5,
+    borderColor: Lamp.hairline,
+    borderRadius: 99,
+    paddingHorizontal: 15,
+    paddingVertical: 9,
+  },
+  sortOn: { backgroundColor: Lamp.ink, borderColor: Lamp.ink },
+  sortText: { color: Lamp.inkSoft, fontFamily: Font.bodySemi, fontWeight: "600", fontSize: 13.5 },
+  sortTextOn: { color: Lamp.ground },
+  empty: {
+    color: Lamp.inkFaint,
+    fontFamily: Font.body,
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: 26,
+    textAlign: "center",
+  },
+  board: {
+    backgroundColor: Lamp.board,
+    borderWidth: 1,
+    borderColor: Lamp.hairline,
+    borderRadius: 20,
+    borderBottomWidth: 5,
+    borderBottomColor: Lamp.shelfEdge,
+    padding: 18,
+    marginBottom: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.4,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 3,
+  },
+  jarName: { fontFamily: Font.display, fontSize: 30, color: Lamp.ink },
+  jarCount: {
+    fontFamily: Font.bodySemi,
+    fontWeight: "600",
+    fontSize: 13.5,
+    color: Lamp.inkSoft,
+    marginTop: 2,
+  },
+  dots: { marginTop: 12 },
+  boardActions: { flexDirection: "row", gap: 14, marginTop: 12, alignItems: "center" },
   confirmBox: {
     marginTop: 12,
-    backgroundColor: "#FAF7F0",
+    backgroundColor: Lamp.ground,
     borderWidth: 1,
-    borderColor: "#EDE6D3",
+    borderColor: Lamp.hairline,
     borderRadius: 14,
     padding: 12,
   },
-  confirmText: { fontSize: 13, lineHeight: 18, color: "#5C564A" },
-  confirmActions: { flexDirection: "row", gap: 8, marginTop: 10 },
-  cardError: { fontSize: 13, lineHeight: 18, color: "#5C564A", marginTop: 8 },
+  confirmText: { fontFamily: Font.body, fontSize: 13.5, lineHeight: 19, color: Lamp.inkSoft },
+  error: { fontFamily: Font.body, fontSize: 13, lineHeight: 18, color: Lamp.honey, marginTop: 8 },
+  pressed: { opacity: 0.75 },
 });

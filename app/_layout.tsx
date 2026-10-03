@@ -1,21 +1,45 @@
+import {
+  BricolageGrotesque_700Bold,
+  useFonts as useDisplay,
+} from "@expo-google-fonts/bricolage-grotesque";
+import { Caveat_600SemiBold, useFonts as useHand } from "@expo-google-fonts/caveat";
+import {
+  Karla_400Regular,
+  Karla_600SemiBold,
+  Karla_700Bold,
+  useFonts as useBody,
+} from "@expo-google-fonts/karla";
 import { Stack } from "expo-router";
-import { StatusBar } from "expo-status-bar";
+import * as SplashScreen from "expo-splash-screen";
+import { useEffect } from "react";
+import { Font, Lamp } from "../constants/lamplight";
+
+SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 export default function RootLayout() {
+  const [displayLoaded] = useDisplay({ BricolageGrotesque_700Bold });
+  const [bodyLoaded] = useBody({ Karla_400Regular, Karla_600SemiBold, Karla_700Bold });
+  const [handLoaded] = useHand({ Caveat_600SemiBold });
+  const ready = displayLoaded && bodyLoaded && handLoaded;
+
+  useEffect(() => {
+    if (ready) SplashScreen.hideAsync().catch(() => undefined);
+  }, [ready]);
+
+  if (!ready) return null;
+
   return (
-    <>
-      <StatusBar style="auto" />
-      <Stack
-        screenOptions={{
-          headerStyle: { backgroundColor: "#FAF7F0" },
-          headerTintColor: "#1E1B16",
-          headerTitleStyle: { fontWeight: "700" },
-          contentStyle: { backgroundColor: "#FAF7F0" },
-        }}
-      >
-        <Stack.Screen name="index" options={{ title: "Marble Jar" }} />
-        <Stack.Screen name="person/[id]" options={{ title: "Jar" }} />
-      </Stack>
-    </>
+    <Stack
+      screenOptions={{
+        headerStyle: { backgroundColor: Lamp.ground },
+        headerTintColor: Lamp.ink,
+        headerTitleStyle: { fontFamily: Font.display, fontSize: 19 },
+        headerShadowVisible: false,
+        contentStyle: { backgroundColor: Lamp.ground },
+      }}
+    >
+      <Stack.Screen name="index" options={{ title: "Marble Jar" }} />
+      <Stack.Screen name="person/[id]" options={{ title: "Jar" }} />
+    </Stack>
   );
 }

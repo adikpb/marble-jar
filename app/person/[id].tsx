@@ -1,6 +1,12 @@
+// The jar room: one person's trust, sitting in lamplight. The vessel fills
+// with real marble glass, the weeks read as a staff, every moment a slip.
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import Animated, { FadeInDown, ZoomIn } from "react-native-reanimated";
+import { MarbleDots, Slip, TagField } from "../../components/lamplight";
+import { TAG_GLOSSES } from "../../constants/braving";
+import { Font, Lamp } from "../../constants/lamplight";
 import {
   addMarble,
   BRAVING_TAGS,
@@ -22,25 +28,8 @@ import {
   type WeeklyTrendPoint,
 } from "../../lib/store";
 
-// Provisional gloss copy (orchestrator-drafted, user approves at review).
-// The main form shows the selected tag's gloss as one line under the strip;
-// the completion editor shows every gloss inline in its tag list.
-const TAG_GLOSSES: Record<string, string> = {
-  Boundaries: "What's okay and what's not — stated clearly.",
-  Reliability: "Do what you say, again and again.",
-  Accountability: "Own mistakes, make amends.",
-  Vault: "Keep confidences; don't share what isn't yours.",
-  Integrity: "Choose right over easy, even unseen.",
-  "Non-judgment": "Listen without ranking or shaming.",
-  Generosity: "Assume the best possible motive first.",
-};
-
 const PAGE_SIZE = 20;
 const TREND_WEEKS_SHOWN = 8;
-
-function chapterNo(c: Chapter): number {
-  return c.index + 1;
-}
 
 function weekLabel(weekStart: number): string {
   const d = new Date(weekStart);
@@ -49,83 +38,8 @@ function weekLabel(weekStart: number): string {
   return d.getFullYear() === thisYear ? `Week of ${base}` : `Week of ${base}, ${d.getFullYear()}`;
 }
 
-function TagList({
-  value,
-  onChange,
-  idPrefix,
-}: {
-  value: string;
-  onChange: (t: string) => void;
-  idPrefix: string;
-}) {
-  return (
-    <View style={s.tagCard}>
-      {BRAVING_TAGS.map((t) => {
-        const gloss = TAG_GLOSSES[t] ?? "";
-        const active = value === t;
-        return (
-          <Pressable
-            key={t}
-            testID={`${idPrefix}${t}`}
-            accessibilityRole="button"
-            accessibilityState={{ selected: active }}
-            accessibilityLabel={gloss ? `${t}. ${gloss}` : t}
-            onPress={() => onChange(active ? "" : t)}
-            style={({ pressed }) => [s.tagRow, active && s.tagRowActive, pressed && s.pressed]}
-          >
-            <View style={s.tagText}>
-              <Text style={[s.tagName, active && s.tagNameActive]}>{t}</Text>
-              {!!gloss && <Text style={[s.tagGloss, active && s.tagGlossActive]}>{gloss}</Text>}
-            </View>
-            <Text style={[s.tagMark, active && s.tagMarkActive, { color: tagHue(t) }]}>
-              {active ? "●" : "○"}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
-// Slim single-line strip for the main log form: compact chips in a
-// horizontal scroll row; tapping selects (tap again deselects) and reveals
-// that tag's gloss as one cocoa line beneath the strip. Nothing selected
-// means no gloss line at all.
-function TagStrip({ value, onChange }: { value: string; onChange: (t: string) => void }) {
-  const gloss = value ? (TAG_GLOSSES[value] ?? "") : "";
-  return (
-    <View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.strip}>
-        {BRAVING_TAGS.map((t) => {
-          const g = TAG_GLOSSES[t] ?? "";
-          const active = value === t;
-          return (
-            <Pressable
-              key={t}
-              testID={`braving-${t}`}
-              accessibilityRole="button"
-              accessibilityState={{ selected: active }}
-              accessibilityLabel={g ? `${t}. ${g}` : t}
-              onPress={() => onChange(active ? "" : t)}
-              style={({ pressed }) => [
-                s.stripChip,
-                active && s.stripChipActive,
-                pressed && s.pressed,
-              ]}
-            >
-              <View style={[s.hueDot, { backgroundColor: tagHue(t) }]} />
-              <Text style={[s.stripChipText, active && s.stripChipTextActive]}>{t}</Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-      {!!gloss && (
-        <Text style={s.stripGloss} numberOfLines={1}>
-          {gloss}
-        </Text>
-      )}
-    </View>
-  );
+function dayLabel(ts: number): string {
+  return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 export default function PersonScreen() {
@@ -134,8 +48,6 @@ export default function PersonScreen() {
   const router = useRouter();
 
   function goBack() {
-    // Deep links and reloads have no navigation history, so the default
-    // header back button never appears — always offer a way home.
     if (router.canGoBack()) router.back();
     else router.replace("/");
   }
@@ -146,6 +58,7 @@ export default function PersonScreen() {
   const [pct, setPct] = useState(0);
   const [reason, setReason] = useState("");
   const [tag, setTag] = useState<string>("");
+  const [formHint, setFormHint] = useState<string | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [live, setLive] = useState<Chapter | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -157,19 +70,17 @@ export default function PersonScreen() {
   const [whyReason, setWhyReason] = useState("");
   const [whyTag, setWhyTag] = useState("");
   const [revision, setRevision] = useState(0);
+  const [justLogged, setJustLogged] = useState<string | null>(null);
 
   const selected: Chapter | null = selectedId
     ? (chapters.find((c) => c.id === selectedId) ?? live)
     : live;
   const viewingPast = !!selected && !!live && selected.id !== live.id;
 
-  // All reads flow through this effect; writes just bump `revision`
-  // (and reset paging) so the next run refetches. The cancelled flag
-  // guards against applying a stale fetch after unmount/remount.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      void revision; // refresh token: refetch after writes even when paging is unchanged
+      void revision;
       if (!personId) return;
       const p = await getPerson(personId).catch(() => null);
       if (cancelled) return;
@@ -207,9 +118,15 @@ export default function PersonScreen() {
 
   async function handleDelta(delta: 1 | -1) {
     if (!personId) return;
-    await addMarble(personId, delta, reason, tag);
+    if (!reason.trim() || !tag) {
+      setFormHint("Give the moment a few words and a BRAVING tag — every marble has a why.");
+      return;
+    }
+    const m = await addMarble(personId, delta, reason, tag);
     setReason("");
     setTag("");
+    setFormHint(null);
+    setJustLogged(m.id);
     setLimit(PAGE_SIZE);
     setRevision((r) => r + 1);
   }
@@ -218,6 +135,7 @@ export default function PersonScreen() {
     setSelectedId(chapterId);
     setLimit(PAGE_SIZE);
     setExpandedWhy(null);
+    setJustLogged(null);
     setRevision((r) => r + 1);
   }
 
@@ -238,26 +156,19 @@ export default function PersonScreen() {
   }
 
   const jarPct = Math.round(pct * 100);
+  // Oldest-first glass for the vessel: the pile grows from the bottom up.
+  const glassOldestFirst: string[] = [...marbles].reverse().map((m) => tagHue(m.bravingTag));
+  while (glassOldestFirst.length < count) glassOldestFirst.unshift(Lamp.honey);
 
-  // Weekly trajectory: net marbles per week, person-wide. Fewer than two
-  // active weeks in the *visible window* shows the "not enough yet"
-  // state — never a flat line.
   const bars = trend.slice(-TREND_WEEKS_SHOWN);
   const activeWeeks = bars.filter((w) => w.count !== 0).length;
   const showBars = activeWeeks >= 2;
   const maxAbs = Math.max(1, ...bars.map((w) => Math.abs(w.count)));
 
-  // Per-tag split for the selected chapter, BRAVING order, untagged last.
-  // Only tags actually present are shown — absent tags appear nowhere.
   const splitRows = [...BRAVING_TAGS.map((t) => breakdown.find((r) => r.tag === t) ?? null)]
     .concat([breakdown.find((r) => !BRAVING_TAGS.includes(r.tag as never)) ?? null])
     .filter((r): r is TagBreakdownRow => !!r && r.added + r.removed > 0);
 
-  // Hue per present row from the shared store mapping (stable by tag
-  // name; untagged falls back to the neutral). Legend dots use the same.
-  const splitTones: string[] = splitRows.map((r) => tagHue(r.tag));
-
-  // History grouped by week (newest first, matching the newest-first feed).
   const groups: { weekStart: number; items: Marble[] }[] = [];
   for (const m of marbles) {
     const ws = startOfWeek(m.ts);
@@ -267,7 +178,11 @@ export default function PersonScreen() {
   }
 
   return (
-    <ScrollView style={s.page} contentContainerStyle={s.content}>
+    <ScrollView
+      style={s.page}
+      contentContainerStyle={s.content}
+      keyboardShouldPersistTaps="handled"
+    >
       <Stack.Screen
         options={{
           headerLeft: () => (
@@ -277,12 +192,10 @@ export default function PersonScreen() {
               accessibilityRole="button"
               accessibilityLabel="Back to jars"
               onPress={goBack}
+              hitSlop={12}
               style={({ pressed }) => [s.backBtn, pressed && s.pressed]}
             >
-              <View style={s.chevron} accessible={false}>
-                <View style={[s.chevronBar, s.chevronBarUp]} />
-                <View style={[s.chevronBar, s.chevronBarDown]} />
-              </View>
+              <Text style={s.backChev}>‹</Text>
             </Pressable>
           ),
         }}
@@ -292,35 +205,33 @@ export default function PersonScreen() {
       </Text>
       <Text
         testID="jar-count"
-        // nativeID -> DOM `id` on web; Maestro's web `id:` selector prefers the
-        // DOM id over aria-label, so it must be kept in sync with testID.
         nativeID="jar-count"
         style={s.count}
         accessibilityLabel={`${count} of ${JAR_CAPACITY} marbles`}
       >
-        {count} / {JAR_CAPACITY} marbles · {jarPct}%
+        {count} of {JAR_CAPACITY} marbles · {jarPct}%
       </Text>
 
-      {/* Jar visual */}
-      <View style={s.jarWrap}>
-        <View style={s.jar} accessible accessibilityLabel={`Jar ${jarPct} percent full`}>
-          <View style={[s.jarFill, { height: `${jarPct}%` }]} />
-          <View style={s.jarShine} />
+      <View style={s.vesselWrap}>
+        <View style={s.vessel} accessible accessibilityLabel={`Jar ${jarPct} percent full`}>
+          <View style={s.vesselNeck} />
+          <View style={s.vesselDots}>
+            <MarbleDots count={count} hues={[...glassOldestFirst].reverse()} size={21} bottomUp />
+          </View>
         </View>
-        <Text style={s.jarHint}>
+        <Text style={s.vesselHint}>
           {count <= 0
             ? "Empty jar — every marble starts with a small kept promise."
             : count >= JAR_CAPACITY
-              ? "Full jar. That's deep trust — keep tending it."
+              ? "A full jar. That's deep trust — keep tending it."
               : `${JAR_CAPACITY - count} marbles to a full jar.`}
         </Text>
       </View>
 
-      {/* Chapters: one fill cycle per era. Past chapters revisit read-only. */}
       {selected && (
         <View style={s.chapters}>
-          <Text style={s.chapterEyebrow}>
-            Chapter {chapterNo(selected)}
+          <Text style={s.chapterLine}>
+            Jar no. {selected.index + 1}
             {viewingPast ? " · closed" : " · collecting"}
           </Text>
           {chapters.length > 1 && (
@@ -334,19 +245,16 @@ export default function PersonScreen() {
                 .map((c) => {
                   const active = selected.id === c.id;
                   const isLive = !!live && c.id === live.id;
-                  const label = isLive
-                    ? `Chapter ${chapterNo(c)} · live`
-                    : `Chapter ${chapterNo(c)} · ${c.finalCount}`;
                   return (
                     <Pressable
                       key={c.id}
-                      testID={`chapter-${chapterNo(c)}`}
+                      testID={`chapter-${c.index + 1}`}
                       accessibilityRole="button"
                       accessibilityState={{ selected: active }}
                       accessibilityLabel={
                         isLive
-                          ? `View live chapter ${chapterNo(c)}`
-                          : `Revisit chapter ${chapterNo(c)}, closed with ${c.finalCount} marbles`
+                          ? `View live jar number ${c.index + 1}`
+                          : `Revisit jar number ${c.index + 1}, closed with ${c.finalCount} marbles`
                       }
                       onPress={() => selectChapter(c.id)}
                       style={({ pressed }) => [
@@ -356,7 +264,9 @@ export default function PersonScreen() {
                       ]}
                     >
                       <Text style={[s.chapterPillText, active && s.chapterPillTextActive]}>
-                        {label}
+                        {isLive
+                          ? `No. ${c.index + 1} · live`
+                          : `No. ${c.index + 1} · ${c.finalCount}`}
                       </Text>
                     </Pressable>
                   );
@@ -368,13 +278,13 @@ export default function PersonScreen() {
               testID="chapter-banner"
               style={s.chapterBanner}
               accessible
-              accessibilityLabel={`Chapter ${chapterNo(selected)} is closed. Revisiting for reflection only.`}
+              accessibilityLabel={`Jar number ${selected.index + 1} is closed. Revisiting for reflection only.`}
             >
               <Text style={s.chapterBannerText}>
-                Chapter {chapterNo(selected)} closed with {selected.finalCount} marble
-                {selected.finalCount === 1 ? "" : "s"}
+                Jar no. {selected.index + 1} closed with {selected.finalCount}{" "}
+                {selected.finalCount === 1 ? "marble" : "marbles"}
                 {selected.finalCount >= JAR_CAPACITY
-                  ? " — a full jar of trust. Milestone worth sitting with."
+                  ? " — a full jar of trust. Worth sitting with."
                   : "."}{" "}
                 Revisiting for reflection — nothing can be added here.
               </Text>
@@ -383,11 +293,10 @@ export default function PersonScreen() {
         </View>
       )}
 
-      {/* Trends: read-only trajectory + per-tag split */}
-      <Text style={s.section}>Trends</Text>
+      <Text style={s.section}>How the weeks read</Text>
       <View
         testID="trends"
-        style={s.card}
+        style={s.trendBoard}
         accessible
         accessibilityLabel={
           showBars
@@ -400,7 +309,7 @@ export default function PersonScreen() {
             {bars.map((w) => {
               const positive = w.count > 0;
               const h =
-                w.count === 0 ? 4 : Math.max(8, Math.round((Math.abs(w.count) / maxAbs) * 88));
+                w.count === 0 ? 4 : Math.max(10, Math.round((Math.abs(w.count) / maxAbs) * 96));
               const date = new Date(w.weekStart).toLocaleDateString(undefined, {
                 month: "numeric",
                 day: "numeric",
@@ -427,25 +336,22 @@ export default function PersonScreen() {
           </View>
         ) : (
           <Text testID="trends-empty" style={s.muted}>
-            Not enough yet — trends appear after a couple of weeks of moments.
+            Not enough yet — the weeks appear after a couple of moments.
           </Text>
         )}
-        <View style={s.cardDivider} />
-        <Text style={s.subLabel}>BRAVING split · this chapter</Text>
+        <View style={s.trendDivider} />
+        <Text style={s.subLabel}>BRAVING split · this jar</Text>
         {splitRows.length === 0 ? (
-          <Text style={s.muted}>No tagged moments yet — tags appear here once you log them.</Text>
+          <Text style={s.muted}>No tagged moments yet — tags gather here once you log them.</Text>
         ) : (
-          <View testID="tag-breakdown" style={s.stackWrap}>
+          <View testID="tag-breakdown">
             <View style={s.splitTrack}>
-              {splitRows.map((r, i) => (
+              {splitRows.map((r) => (
                 <View
                   key={r.tag}
                   style={[
                     s.stackSeg,
-                    {
-                      flex: r.added + r.removed,
-                      backgroundColor: splitTones[i],
-                    },
+                    { flex: r.added + r.removed, backgroundColor: tagHue(r.tag) },
                   ]}
                   accessible
                   accessibilityLabel={`${r.tag}: ${r.added} added, ${r.removed} removed`}
@@ -453,14 +359,14 @@ export default function PersonScreen() {
               ))}
             </View>
             <View style={s.legend}>
-              {splitRows.map((r, i) => (
+              {splitRows.map((r) => (
                 <View
                   key={r.tag}
                   style={s.legendItem}
                   accessible
                   accessibilityLabel={`${r.tag}: ${r.added} added, ${r.removed} removed`}
                 >
-                  <View style={[s.legendDot, { backgroundColor: splitTones[i] }]} />
+                  <View style={[s.legendDot, { backgroundColor: tagHue(r.tag) }]} />
                   <Text style={s.legendName}>{r.tag}</Text>
                   <Text style={s.legendCounts}>
                     +{r.added} · −{r.removed}
@@ -472,8 +378,7 @@ export default function PersonScreen() {
         )}
       </View>
 
-      {/* Log form (live chapter only — past chapters are read-only) */}
-      {!viewingPast ? (
+      {!viewingPast && (
         <View>
           <Text style={s.section}>Log a moment</Text>
           <TextInput
@@ -482,24 +387,33 @@ export default function PersonScreen() {
             accessibilityLabel="Reason"
             accessibilityHint="What happened? e.g. remembered the small thing I mentioned"
             value={reason}
-            onChangeText={setReason}
+            onChangeText={(t) => {
+              setReason(t);
+              setFormHint(null);
+            }}
             placeholder="What happened?"
-            placeholderTextColor="#A39E93"
-            style={s.input}
+            placeholderTextColor={Lamp.inkFaint}
+            style={s.field}
           />
-
-          <Text style={s.label}>BRAVING tag</Text>
-          <TagStrip value={tag} onChange={setTag} />
-
+          <Text style={s.fieldLabel}>BRAVING tag</Text>
+          <TagField
+            value={tag}
+            onChange={(t) => {
+              setTag(t);
+              setFormHint(null);
+            }}
+            glosses={TAG_GLOSSES}
+            idPrefix="braving-"
+          />
           <View style={s.btnRow}>
             <Pressable
               testID="remove-marble"
               accessibilityRole="button"
               accessibilityLabel="Remove a marble"
               onPress={() => handleDelta(-1)}
-              style={({ pressed }) => [s.btn, s.btnGhost, pressed && s.pressed]}
+              style={({ pressed }) => [s.btnGhost, pressed && s.pressed]}
             >
-              <Text style={s.btnGhostText}>− Remove</Text>
+              <Text style={s.btnGhostText}>− Broke one</Text>
             </Pressable>
             <Pressable
               testID="add-marble"
@@ -507,52 +421,60 @@ export default function PersonScreen() {
               accessibilityRole="button"
               accessibilityLabel="Add a marble"
               onPress={() => handleDelta(1)}
-              style={({ pressed }) => [s.btn, s.btnSolid, pressed && s.pressed]}
+              style={({ pressed }) => [s.btnSolid, pressed && s.pressed]}
             >
-              <Text style={s.btnSolidText}>+ Marble</Text>
+              <Text style={s.btnSolidText}>+ Kept one</Text>
             </Pressable>
           </View>
+          {!!formHint && (
+            <Text style={s.hint} accessibilityRole="alert">
+              {formHint}
+            </Text>
+          )}
         </View>
-      ) : null}
+      )}
 
-      <Text style={s.section}>History</Text>
+      <Text style={s.section}>Moments, by week</Text>
       {marbles.length === 0 ? (
         <Text style={s.empty}>Nothing logged yet — add the first marble.</Text>
       ) : (
         <View testID="history-list">
           {groups.map((g) => (
             <View key={g.weekStart}>
-              <Text style={s.weekHeader} accessibilityRole="header">
-                {weekLabel(g.weekStart)}
-              </Text>
+              <View style={s.weekRule}>
+                <View
+                  style={s.weekStaff}
+                  accessible
+                  accessibilityLabel={`${weekLabel(g.weekStart)}, ${g.items.length} moments`}
+                />
+                <Text style={s.weekHeader} accessibilityRole="header">
+                  {weekLabel(g.weekStart)} · {g.items.length}{" "}
+                  {g.items.length === 1 ? "moment" : "moments"}
+                </Text>
+              </View>
               {g.items.map((item) => {
                 const needsWhy = !viewingPast && (!item.reason.trim() || !item.bravingTag.trim());
                 const expanded = expandedWhy === item.id;
-                return (
-                  <View key={item.id} style={s.feedItem}>
-                    <Text style={[s.dot, item.delta > 0 ? s.dotUp : s.dotDown]}>
-                      {item.delta > 0 ? "●" : "○"}
-                    </Text>
+                const inner = (
+                  <View key={item.id} style={s.feedRow}>
+                    <View style={s.markCol}>
+                      <View
+                        style={
+                          item.delta > 0
+                            ? [s.mark, { backgroundColor: tagHue(item.bravingTag) }]
+                            : [s.markRing, { borderColor: tagHue(item.bravingTag) }]
+                        }
+                      />
+                      <View style={s.markStem} />
+                    </View>
                     <View style={s.feedBody}>
-                      <Text style={s.feedReason}>
-                        {item.reason || (item.delta > 0 ? "Marble added" : "Marble removed")}
-                      </Text>
-                      <Text style={s.feedMeta}>
-                        {item.delta > 0 ? "+1" : "−1"}
-                        {item.bravingTag ? (
-                          <>
-                            {" · "}
-                            <Text style={[s.feedTag, { color: tagHue(item.bravingTag) }]}>
-                              {item.bravingTag}
-                            </Text>
-                          </>
-                        ) : null}{" "}
-                        ·{" "}
-                        {new Date(item.ts).toLocaleDateString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </Text>
+                      <Slip
+                        reason={item.reason}
+                        fallback={item.delta > 0 ? "Marble added" : "Marble removed"}
+                        hue={tagHue(item.bravingTag)}
+                        removed={item.delta < 0}
+                        meta={`${item.delta > 0 ? "+1" : "−1"}${item.bravingTag ? ` · ${item.bravingTag}` : " · untagged"} · ${dayLabel(item.ts)}`}
+                      />
                       {needsWhy &&
                         (expanded ? (
                           <View style={s.whyCard}>
@@ -565,14 +487,19 @@ export default function PersonScreen() {
                                 value={whyReason}
                                 onChangeText={setWhyReason}
                                 placeholder="What happened?"
-                                placeholderTextColor="#A39E93"
-                                style={s.input}
+                                placeholderTextColor={Lamp.inkFaint}
+                                style={s.field}
                               />
                             )}
                             {!item.bravingTag.trim() && (
                               <View>
-                                <Text style={s.label}>BRAVING tag</Text>
-                                <TagList value={whyTag} onChange={setWhyTag} idPrefix="why-tag-" />
+                                <Text style={s.fieldLabel}>BRAVING tag</Text>
+                                <TagField
+                                  value={whyTag}
+                                  onChange={setWhyTag}
+                                  glosses={TAG_GLOSSES}
+                                  idPrefix="why-tag-"
+                                />
                               </View>
                             )}
                             <View style={s.btnRow}>
@@ -582,7 +509,6 @@ export default function PersonScreen() {
                                 accessibilityLabel="Cancel adding the why"
                                 onPress={() => setExpandedWhy(null)}
                                 style={({ pressed }) => [
-                                  s.btn,
                                   s.btnGhost,
                                   s.btnSmall,
                                   pressed && s.pressed,
@@ -596,7 +522,6 @@ export default function PersonScreen() {
                                 accessibilityLabel="Save the why"
                                 onPress={() => saveWhy(item)}
                                 style={({ pressed }) => [
-                                  s.btn,
                                   s.btnSolid,
                                   s.btnSmall,
                                   pressed && s.pressed,
@@ -620,6 +545,13 @@ export default function PersonScreen() {
                     </View>
                   </View>
                 );
+                return justLogged === item.id ? (
+                  <Animated.View key={item.id} entering={ZoomIn.duration(380)}>
+                    {inner}
+                  </Animated.View>
+                ) : (
+                  <View key={item.id}>{inner}</View>
+                );
               })}
             </View>
           ))}
@@ -637,226 +569,239 @@ export default function PersonScreen() {
           <Text style={s.moreBtnText}>Show more</Text>
         </Pressable>
       )}
+      <Animated.View entering={FadeInDown.duration(400)}>
+        <Text style={s.signoff}>Small moments, collected.</Text>
+      </Animated.View>
     </ScrollView>
   );
 }
 
 const s = StyleSheet.create({
-  page: { flex: 1, backgroundColor: "#FAF7F0" },
-  content: { padding: 20, paddingTop: 16, paddingBottom: 48 },
-  name: { fontSize: 28, fontWeight: "800", color: "#1E1B16" },
-  count: { fontSize: 14, fontWeight: "600", color: "#8A8478", marginTop: 4 },
-  jarWrap: { alignItems: "center", marginVertical: 18 },
-  jar: {
-    width: 150,
-    height: 190,
-    borderWidth: 3,
-    borderColor: "#1E1B16",
-    borderTopWidth: 5,
-    borderRadius: 18,
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
-    backgroundColor: "#FFFDF7",
-    overflow: "hidden",
-    justifyContent: "flex-end",
+  page: { flex: 1, backgroundColor: Lamp.ground },
+  content: {
+    padding: 20,
+    paddingTop: 14,
+    paddingBottom: 56,
+    maxWidth: 880,
+    width: "100%",
+    alignSelf: "center",
   },
-  jarFill: { backgroundColor: "#E8A33D", borderRadius: 6 },
-  jarShine: {
-    position: "absolute",
-    left: 12,
-    top: 14,
-    bottom: 14,
-    width: 14,
-    borderRadius: 99,
-    backgroundColor: "rgba(255,255,255,0.65)",
-  },
-  jarHint: { marginTop: 10, fontSize: 13, color: "#5C564A", textAlign: "center", maxWidth: 280 },
-  chapters: { marginBottom: 4 },
-  chapterEyebrow: {
-    fontSize: 12,
+  backBtn: { paddingVertical: 4, paddingRight: 14 },
+  backChev: { fontSize: 34, lineHeight: 34, color: Lamp.ink, fontFamily: Font.body },
+  name: { fontFamily: Font.display, fontSize: 44, lineHeight: 46, color: Lamp.ink },
+  count: {
+    fontFamily: Font.bodySemi,
     fontWeight: "600",
-    letterSpacing: 2,
-    textTransform: "uppercase",
-    color: "#8A8478",
+    fontSize: 14.5,
+    color: Lamp.inkSoft,
+    marginTop: 4,
   },
+  vesselWrap: { alignItems: "center", marginVertical: 20 },
+  vessel: {
+    width: 208,
+    borderWidth: 3,
+    borderColor: Lamp.ink,
+    borderRadius: 26,
+    backgroundColor: "rgba(245,233,210,0.05)",
+    padding: 16,
+    paddingTop: 0,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOpacity: 0.45,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
+  },
+  vesselNeck: {
+    alignSelf: "center",
+    width: 120,
+    height: 12,
+    borderBottomWidth: 3,
+    borderLeftWidth: 3,
+    borderRightWidth: 3,
+    borderColor: Lamp.ink,
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
+    marginBottom: 14,
+  },
+  vesselDots: { minHeight: 120, justifyContent: "flex-end" },
+  vesselHint: {
+    marginTop: 12,
+    fontFamily: Font.body,
+    fontSize: 13.5,
+    color: Lamp.inkSoft,
+    textAlign: "center",
+    maxWidth: 300,
+  },
+  chapters: { marginBottom: 6 },
+  chapterLine: { fontFamily: Font.display, fontSize: 22, color: Lamp.ink },
   chapterStrip: { gap: 8, paddingVertical: 10, paddingRight: 20 },
   chapterPill: {
-    borderWidth: 1,
-    borderColor: "#E0D8C2",
-    backgroundColor: "#fff",
+    borderWidth: 1.5,
+    borderColor: Lamp.hairline,
     borderRadius: 99,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 11,
   },
-  chapterPillActive: { backgroundColor: "#1E1B16", borderColor: "#1E1B16" },
-  chapterPillText: { fontSize: 13, fontWeight: "600", color: "#5C564A" },
-  chapterPillTextActive: { color: "#FAF7F0" },
+  chapterPillActive: { backgroundColor: Lamp.ink, borderColor: Lamp.ink },
+  chapterPillText: {
+    fontFamily: Font.bodySemi,
+    fontWeight: "600",
+    fontSize: 13.5,
+    color: Lamp.inkSoft,
+  },
+  chapterPillTextActive: { color: Lamp.ground },
   chapterBanner: {
-    backgroundColor: "#EDE6D3",
+    backgroundColor: Lamp.board,
+    borderWidth: 1,
+    borderColor: Lamp.hairline,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginBottom: 4,
   },
-  chapterBannerText: { fontSize: 14, lineHeight: 20, color: "#1E1B16" },
+  chapterBannerText: { fontFamily: Font.body, fontSize: 14, lineHeight: 20, color: Lamp.inkSoft },
   section: {
-    fontSize: 13,
-    fontWeight: "700",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    color: "#8A8478",
-    marginTop: 8,
-    marginBottom: 8,
+    fontFamily: Font.display,
+    fontSize: 22,
+    color: Lamp.ink,
+    marginTop: 18,
+    marginBottom: 10,
   },
-  card: {
-    backgroundColor: "#fff",
+  trendBoard: {
+    backgroundColor: Lamp.board,
     borderWidth: 1,
-    borderColor: "#E9E2D2",
-    borderRadius: 18,
+    borderColor: Lamp.hairline,
+    borderRadius: 20,
     padding: 16,
   },
-  muted: { fontSize: 14, lineHeight: 20, color: "#8A8478" },
-  subLabel: { fontSize: 13, fontWeight: "600", color: "#5C564A", marginBottom: 10 },
-  cardDivider: { height: 1, backgroundColor: "#EDE6D3", marginVertical: 14 },
+  muted: { fontFamily: Font.body, fontSize: 14, lineHeight: 20, color: Lamp.inkFaint },
+  subLabel: {
+    fontFamily: Font.bodySemi,
+    fontWeight: "600",
+    fontSize: 13.5,
+    color: Lamp.inkSoft,
+    marginBottom: 10,
+  },
+  trendDivider: { height: 1, backgroundColor: Lamp.hairline, marginVertical: 14 },
   bars: { flexDirection: "row", alignItems: "flex-end" },
-  barCol: { flex: 1, alignItems: "center", justifyContent: "flex-end", minHeight: 112 },
-  bar: { width: 18, borderRadius: 9 },
-  barUp: { backgroundColor: "#E8A33D" },
-  barDown: { backgroundColor: "#8A8478" },
-  barZero: { opacity: 0.35, backgroundColor: "#8A8478" },
-  barLabel: { fontSize: 12, color: "#8A8478", marginTop: 6, height: 16 },
-  stackWrap: { gap: 10 },
+  barCol: { flex: 1, alignItems: "center", justifyContent: "flex-end", minHeight: 120 },
+  bar: { width: 20, borderRadius: 10 },
+  barUp: { backgroundColor: Lamp.honey },
+  barDown: { backgroundColor: Lamp.cherry },
+  barZero: { opacity: 0.3, backgroundColor: Lamp.inkFaint },
+  barLabel: { fontFamily: Font.body, fontSize: 12, color: Lamp.inkFaint, marginTop: 6, height: 16 },
   splitTrack: {
     flexDirection: "row",
-    height: 8,
+    height: 10,
     borderRadius: 99,
-    backgroundColor: "#F0EAD9",
     overflow: "hidden",
+    backgroundColor: Lamp.ground,
   },
-  stackSeg: { minWidth: 8 },
-  legend: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  legendItem: { flexDirection: "row", alignItems: "center", gap: 5, marginRight: 8 },
-  legendDot: { width: 10, height: 10, borderRadius: 5 },
-  legendName: { fontSize: 13, fontWeight: "600", color: "#5C564A" },
-  legendCounts: { fontSize: 12, color: "#8A8478" },
-  input: {
-    backgroundColor: "#fff",
+  stackSeg: { minWidth: 10 },
+  legend: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 12 },
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginRight: 10,
+    marginBottom: 4,
+  },
+  legendDot: { width: 11, height: 11, borderRadius: 5.5 },
+  legendName: { fontFamily: Font.bodySemi, fontWeight: "600", fontSize: 13, color: Lamp.inkSoft },
+  legendCounts: { fontFamily: Font.body, fontSize: 12.5, color: Lamp.inkFaint },
+  field: {
+    backgroundColor: Lamp.board,
     borderWidth: 1,
-    borderColor: "#E4DECF",
+    borderColor: Lamp.hairline,
     borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 13,
     fontSize: 16,
-    color: "#1E1B16",
+    fontFamily: Font.body,
+    color: Lamp.ink,
   },
-  label: { fontSize: 13, fontWeight: "600", color: "#5C564A", marginTop: 12, marginBottom: 6 },
-  tagCard: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#E9E2D2",
-    borderRadius: 18,
-    padding: 6,
-    gap: 2,
-  },
-  tagRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    minHeight: 56,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  tagRowActive: { backgroundColor: "#1E1B16" },
-  tagText: { flex: 1, gap: 2 },
-  tagName: { fontSize: 15, fontWeight: "700", color: "#1E1B16" },
-  tagNameActive: { color: "#FAF7F0" },
-  tagGloss: { fontSize: 13, lineHeight: 18, color: "#8A8478" },
-  tagGlossActive: { color: "#FAF7F0", opacity: 0.75 },
-  tagMark: { fontSize: 16, color: "#8A8478" },
-  tagMarkActive: { color: "#FAF7F0" },
-  strip: { gap: 8, paddingRight: 20 },
-  stripChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    borderWidth: 1,
-    borderColor: "#E0D8C2",
-    backgroundColor: "#fff",
-    borderRadius: 99,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  stripChipActive: { backgroundColor: "#1E1B16", borderColor: "#1E1B16" },
-  stripChipText: { fontSize: 13, fontWeight: "600", color: "#5C564A" },
-  stripChipTextActive: { color: "#FAF7F0" },
-  stripGloss: { fontSize: 13, lineHeight: 18, color: "#5C564A", marginTop: 8 },
-  hueDot: { width: 10, height: 10, borderRadius: 5 },
-  btnRow: { flexDirection: "row", gap: 10, marginTop: 14 },
-  btn: { flex: 1, borderRadius: 14, paddingVertical: 14, alignItems: "center" },
-  btnSmall: { paddingVertical: 12 },
-  btnSolid: { backgroundColor: "#2E7D6F" },
-  btnSolidText: { color: "#fff", fontWeight: "700", fontSize: 16 },
-  btnSolidTextSmall: { color: "#fff", fontWeight: "700", fontSize: 15 },
-  btnGhost: { backgroundColor: "#fff", borderWidth: 1, borderColor: "#E0D8C2" },
-  btnGhostText: { color: "#1E1B16", fontWeight: "700", fontSize: 16 },
-  btnGhostTextSmall: { color: "#1E1B16", fontWeight: "700", fontSize: 15 },
-  backBtn: { paddingVertical: 6, paddingRight: 12 },
-  chevron: { width: 12, height: 20, flexShrink: 0 },
-  chevronBar: {
-    position: "absolute",
-    width: 12,
-    height: 2.5,
-    borderRadius: 1.5,
-    backgroundColor: "#1E1B16",
-  },
-  chevronBarUp: { top: 4.5, transform: [{ rotate: "-45deg" }] },
-  chevronBarDown: { top: 11.5, transform: [{ rotate: "45deg" }] },
-  pressed: { opacity: 0.75 },
-  weekHeader: {
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    color: "#8A8478",
+  fieldLabel: {
+    fontFamily: Font.bodySemi,
+    fontWeight: "600",
+    fontSize: 13.5,
+    color: Lamp.inkSoft,
     marginTop: 12,
-    marginBottom: 2,
+    marginBottom: 8,
   },
-  empty: { color: "#8A8478", fontSize: 14, marginTop: 8 },
-  feedItem: {
-    flexDirection: "row",
-    gap: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#EDE6D3",
+  btnRow: { flexDirection: "row", gap: 10, marginTop: 14 },
+  btnSolid: {
+    flex: 1,
+    backgroundColor: Lamp.cherry,
+    borderRadius: 14,
+    paddingVertical: 15,
+    alignItems: "center",
   },
-  dot: { fontSize: 16, marginTop: 1 },
-  dotUp: { color: "#E8A33D" },
-  dotDown: { color: "#B9B2A1" },
+  btnSolidText: { color: Lamp.cream, fontFamily: Font.bodyBold, fontWeight: "700", fontSize: 16 },
+  btnGhost: {
+    flex: 1,
+    borderRadius: 14,
+    paddingVertical: 15,
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: Lamp.hairline,
+  },
+  btnGhostText: { color: Lamp.inkSoft, fontFamily: Font.bodyBold, fontWeight: "700", fontSize: 16 },
+  btnSmall: { paddingVertical: 12 },
+  btnSolidTextSmall: {
+    color: Lamp.cream,
+    fontFamily: Font.bodyBold,
+    fontWeight: "700",
+    fontSize: 15,
+  },
+  btnGhostTextSmall: {
+    color: Lamp.inkSoft,
+    fontFamily: Font.bodyBold,
+    fontWeight: "700",
+    fontSize: 15,
+  },
+  hint: { fontFamily: Font.body, fontSize: 13, lineHeight: 18, color: Lamp.honey, marginTop: 10 },
+  weekRule: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 14, marginBottom: 8 },
+  weekStaff: { width: 3, alignSelf: "stretch", backgroundColor: Lamp.honey, borderRadius: 2 },
+  weekHeader: { fontFamily: Font.display, fontSize: 18, color: Lamp.ink },
+  empty: { color: Lamp.inkFaint, fontFamily: Font.body, fontSize: 14, marginTop: 8 },
+  feedRow: { flexDirection: "row", gap: 12, marginBottom: 12 },
+  markCol: { alignItems: "center", width: 18 },
+  mark: { width: 15, height: 15, borderRadius: 7.5, marginTop: 14 },
+  markRing: { width: 15, height: 15, borderRadius: 7.5, borderWidth: 2.5, marginTop: 14 },
+  markStem: { flex: 1, width: 2, backgroundColor: Lamp.hairline, marginTop: 4, minHeight: 8 },
   feedBody: { flex: 1 },
-  feedReason: { fontSize: 15, color: "#1E1B16", fontWeight: "500" },
-  feedMeta: { fontSize: 12, color: "#8A8478", marginTop: 2 },
-  feedTag: { fontSize: 12, fontWeight: "600" },
   whyPill: {
     alignSelf: "flex-start",
     marginTop: 8,
-    borderWidth: 1,
-    borderColor: "#E0D8C2",
-    backgroundColor: "#fff",
+    borderWidth: 1.5,
+    borderColor: Lamp.hairline,
     borderRadius: 99,
-    paddingHorizontal: 13,
-    paddingVertical: 8,
+    paddingHorizontal: 15,
+    paddingVertical: 9,
   },
-  whyPillText: { fontSize: 13, fontWeight: "600", color: "#5C564A" },
+  whyPillText: {
+    fontFamily: Font.bodySemi,
+    fontWeight: "600",
+    fontSize: 13.5,
+    color: Lamp.inkSoft,
+  },
   whyCard: { marginTop: 10, gap: 2 },
   moreBtn: {
     marginTop: 12,
     borderRadius: 14,
-    paddingVertical: 14,
+    paddingVertical: 15,
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#E0D8C2",
+    borderWidth: 1.5,
+    borderColor: Lamp.hairline,
   },
-  moreBtnText: { color: "#1E1B16", fontWeight: "700", fontSize: 15 },
+  moreBtnText: { color: Lamp.ink, fontFamily: Font.bodyBold, fontWeight: "700", fontSize: 15 },
+  signoff: {
+    fontFamily: Font.hand,
+    fontSize: 24,
+    color: Lamp.inkSoft,
+    textAlign: "center",
+    marginTop: 30,
+  },
+  pressed: { opacity: 0.75 },
 });
