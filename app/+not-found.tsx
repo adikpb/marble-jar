@@ -35,6 +35,7 @@ const styles = StyleSheet.create({
   },
   linkText: {
     fontSize: 14,
-    color: "#2e78b7",
+    color: "#1E1B16",
+    textDecorationLine: "underline",
   },
 });
