@@ -61,9 +61,11 @@ export function MarbleDots({
   );
 }
 
-// Full-bleed hue fields for choosing a BRAVING tag: each tag floods its own
-// row with its color at rest, and the chosen one goes dark with the hue kept
-// as a lit edge. No timid chips.
+// Compact hue pills for choosing a BRAVING tag: each tag floods its own
+// pill with its color at rest, and the chosen one goes dark with the hue
+// kept as a lit edge. Same glass language as the full-bleed rows, wrapped
+// tight so the composer stays a composer. Tapping the chosen pill clears
+// back to untagged. The chosen tag's gloss reads once below the row.
 export function TagField({
   value,
   onChange,
@@ -76,45 +78,42 @@ export function TagField({
   idPrefix: string;
 }) {
   const tags = Object.keys(glosses);
+  const activeGloss = value ? (glosses[value] ?? "") : "";
   return (
-    <View style={tf.list}>
-      {tags.map((t) => {
-        const active = value === t;
-        const hue = tagHue(t);
-        const gloss = glosses[t] ?? "";
-        return (
-          <Pressable
-            key={t}
-            testID={`${idPrefix}${t}`}
-            accessibilityRole="button"
-            accessibilityState={{ selected: active }}
-            accessibilityLabel={gloss ? `${t}. ${gloss}` : t}
-            onPress={() => onChange(active ? "" : t)}
-            style={({ pressed }) => [
-              tf.field,
-              { backgroundColor: active ? Lamp.boardRaised : hue },
-              active && { borderColor: hue },
-              pressed && tf.pressed,
-            ]}
-          >
-            <Text
-              style={[tf.name, active ? { color: Lamp.ink } : { color: Lamp.paperInk }]}
-              numberOfLines={1}
+    <View>
+      <View style={tf.list}>
+        {tags.map((t) => {
+          const active = value === t;
+          const hue = tagHue(t);
+          const gloss = glosses[t] ?? "";
+          return (
+            <Pressable
+              key={t}
+              testID={`${idPrefix}${t}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              accessibilityLabel={gloss ? `${t}. ${gloss}` : t}
+              onPress={() => onChange(active ? "" : t)}
+              hitSlop={6}
+              style={({ pressed }) => [
+                tf.field,
+                { backgroundColor: active ? Lamp.boardRaised : hue },
+                active && { borderColor: hue },
+                pressed && tf.pressed,
+              ]}
             >
-              {t}
-            </Text>
-            {!!gloss && (
               <Text
-                style={[tf.gloss, active ? { color: Lamp.inkSoft } : { color: Lamp.paperInk }]}
+                style={[tf.name, active ? { color: Lamp.ink } : { color: Lamp.paperInk }]}
                 numberOfLines={1}
               >
-                {gloss}
+                {t}
               </Text>
-            )}
-            <View style={[tf.pin, { backgroundColor: active ? hue : "rgba(43,30,17,0.55)" }]} />
-          </Pressable>
-        );
-      })}
+              <View style={[tf.pin, { backgroundColor: active ? hue : "rgba(43,30,17,0.55)" }]} />
+            </Pressable>
+          );
+        })}
+      </View>
+      {!!activeGloss && <Text style={tf.glossLine}>{activeGloss}</Text>}
     </View>
   );
 }
@@ -154,20 +153,26 @@ const md = StyleSheet.create({
 });
 
 const tf = StyleSheet.create({
-  list: { gap: 8 },
+  list: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   field: {
-    borderRadius: 14,
+    borderRadius: 99,
     borderWidth: 2,
     borderColor: "transparent",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 7,
   },
-  name: { fontFamily: Font.bodyBold, fontSize: 15, fontWeight: "700" },
-  gloss: { flex: 1, fontFamily: Font.body, fontSize: 12.5 },
-  pin: { width: 14, height: 14, borderRadius: 7 },
+  name: { fontFamily: Font.bodyBold, fontSize: 13.5, fontWeight: "700" },
+  pin: { width: 12, height: 12, borderRadius: 6 },
+  glossLine: {
+    fontFamily: Font.body,
+    fontSize: 13,
+    lineHeight: 18,
+    color: Lamp.inkSoft,
+    marginTop: 8,
+  },
   pressed: { opacity: 0.8 },
 });
 
