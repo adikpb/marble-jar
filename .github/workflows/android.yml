@@ -70,11 +70,46 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
+      # Do NOT reintroduce android-actions/setup-android here. Its default
+      # package list still asks sdkmanager for the long-obsolete `tools`
+      # package, which cmdline-tools 16 no longer serves, so the action fails
+      # with "Warning: Failed to find package 'tools'" before the build even
+      # starts. The ubuntu-latest image already ships a working cmdline-tools
+      # 16.0 in $ANDROID_HOME, so provision the packages explicitly instead.
+      #
+      # Expo SDK 57 compiles against compileSdk/targetSdk 36 (see
+      # applyDefaultAndroidSdkVersions in expo-modules-core's
+      # ProjectConfiguration.kt). Everything else the build needs — the NDK,
+      # CMake, and whatever build-tools revision AGP 8.12 picks — is fetched by
+      # AGP itself through the android.builder.sdkDownload step below.
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        run: |
+          set -euo pipefail
+          sdkmanager_bin="$ANDROID_HOME/cmdline-tools/latest/bin"
+          echo "$sdkmanager_bin" >> "$GITHUB_PATH"
+          export PATH="$sdkmanager_bin:$PATH"
+          sdkmanager --version
 
-      - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+
+          sdkmanager --install "platform-tools" "platforms;android-36"
+
+          # AGP 8.12 (React Native 0.86) chooses its own default build-tools
+          # revision; install it up front so the aapt2 sanity check in the
+          # "Locate and verify APK" step below has a binary to call.
+          build_tools=""
+          for version in 35.0.0 36.0.0; do
+            if yes | sdkmanager --install "build-tools;$version"; then
+              build_tools="$version"
+              break
+            fi
+            echo "build-tools;$version is unavailable, trying the next revision"
+          done
+          if [ -z "$build_tools" ]; then
+            echo "::error::could not install any supported Android build-tools revision"
+            exit 1
+          fi
+          echo "installed build-tools;$build_tools"
 
       - name: Setup Node
         uses: actions/setup-node@v4
