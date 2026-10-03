@@ -296,8 +296,11 @@ jobs:
 
       - name: Assemble release APK
         working-directory: android
-        run: ./gradlew assembleRelease --no-daemon --stacktrace \
-          -PreactNativeArchitectures=${{ env.ANDROID_ARCHITECTURES }}
+        # Single line on purpose. A `\` line continuation inside a plain YAML
+        # scalar is folded to `\ ` (backslash + space), so the shell passed
+        # " -PreactNativeArchitectures=..." as one argument and gradle read it
+        # as a task name. Keep the whole command on one line, unquoted.
+        run: ./gradlew assembleRelease --no-daemon --stacktrace -PreactNativeArchitectures=${{ env.ANDROID_ARCHITECTURES }}
 
       - name: Locate and verify APK
         id: apk

@@ -147,7 +147,8 @@ jobs:
       - name: Maestro tests (web)
         shell: bash
         run: |
-          maestro test .maestro/*.yml --format junit --output "${{ runner.temp }}/maestro-logs/results.xml"
+          maestro test .maestro/*.yml --headless --screen-size 1280x800 \
+            --format junit --output "${{ runner.temp }}/maestro-logs/results.xml"
 
       - name: Stop static server
         if: always()
