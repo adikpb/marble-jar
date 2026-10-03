@@ -1,21 +1,56 @@
 import { Link, useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { addPerson, getPeopleWithCounts, JAR_CAPACITY, type Person } from "../lib/store";
+import { useCallback, useEffect, useState } from "react";
+import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  addPerson,
+  getPeopleWithCounts,
+  JAR_CAPACITY,
+  type Person,
+  removePerson,
+  renamePerson,
+  type SortKey,
+  searchPeople,
+} from "../lib/store";
 
 type Row = Person & { count: number; pct: number };
+
+const SORTS: { key: SortKey; short: string; label: string }[] = [
+  { key: "recent", short: "Recent", label: "Sort by recent activity" },
+  { key: "fullest", short: "Fullest", label: "Sort by fullest jar" },
+  { key: "name", short: "Name", label: "Sort by name" },
+];
+
+// searchPeople arrives name-sorted; re-order client-side when the shelf is
+// set to fullest. ("recent" search goes through getPeopleWithCounts instead,
+// so true last-activity order holds there too.)
+function orderSearchRows(rows: Row[], sort: SortKey): Row[] {
+  if (sort === "fullest") {
+    return [...rows].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }
+  return rows;
+}
 
 export default function Home() {
   const [people, setPeople] = useState<Row[]>([]);
   const [name, setName] = useState("");
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<SortKey>("recent");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
 
   const refresh = useCallback(async () => {
     try {
-      setPeople(await getPeopleWithCounts());
+      const q = query.trim();
+      if (q && sort !== "recent") {
+        setPeople(orderSearchRows(await searchPeople(q), sort));
+        return;
+      }
+      const rows = await getPeopleWithCounts(sort);
+      setPeople(q ? rows.filter((p) => p.name.toLowerCase().includes(q.toLowerCase())) : rows);
     } catch {
       // first-run DB errors surface as empty list; retry on focus
     }
-  }, []);
+  }, [query, sort]);
 
   useFocusEffect(
     useCallback(() => {
@@ -23,12 +58,181 @@ export default function Home() {
     }, [refresh]),
   );
 
+  // Live search with a light debounce so every keystroke isn't a store round-trip.
+  // (Deferred through setTimeout so the effect body never sets state synchronously.)
+  useEffect(() => {
+    const t = setTimeout(
+      () => {
+        refresh();
+      },
+      query.trim() ? 250 : 0,
+    );
+    return () => clearTimeout(t);
+  }, [query, refresh]);
+
   async function handleAdd() {
     if (!name.trim()) return;
     await addPerson(name);
     setName("");
+    // Clear any search so the new jar is visible on the shelf right away.
+    setQuery("");
     await refresh();
   }
+
+  function startRename(row: Row) {
+    setEditingId(row.id);
+    setDraft(row.name);
+  }
+
+  function cancelRename() {
+    setEditingId(null);
+    setDraft("");
+  }
+
+  async function saveRename(row: Row) {
+    const next = draft.trim();
+    if (!next || next === row.name) {
+      cancelRename();
+      return;
+    }
+    try {
+      await renamePerson(row.id, next);
+    } catch {
+      Alert.alert("Couldn't save that name", "Please try again.");
+      return;
+    }
+    cancelRename();
+    await refresh();
+  }
+
+  function askRemove(row: Row) {
+    const noun = row.count === 1 ? "marble" : "marbles";
+    const detail =
+      row.count > 0
+        ? `Their jar holds ${row.count} ${noun} — every reason and tag goes with it. This can't be undone.`
+        : "Their jar is empty, so no marbles go with it — but they leave the shelf for good.";
+    Alert.alert(`Remove ${row.name}?`, detail, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await removePerson(row.id);
+          } catch {
+            Alert.alert("Couldn't remove that jar", "Please try again.");
+            return;
+          }
+          if (editingId === row.id) cancelRename();
+          await refresh();
+        },
+      },
+    ]);
+  }
+
+  function renderRow(item: Row) {
+    const editing = editingId === item.id;
+    const pct = Math.round(item.pct * 100);
+    return (
+      <View style={s.card}>
+        {editing ? (
+          <View>
+            <TextInput
+              testID="rename-person-input"
+              // Keep testID + nativeID in sync (see note on add-person-input).
+              nativeID="rename-person-input"
+              accessibilityLabel={`Rename ${item.name}`}
+              accessibilityHint="Edit the name, then press Save"
+              value={draft}
+              onChangeText={setDraft}
+              placeholder={item.name}
+              placeholderTextColor="#A39E93"
+              style={s.input}
+              returnKeyType="done"
+              onSubmitEditing={() => saveRename(item)}
+              autoFocus
+            />
+            <View style={s.track} accessible accessibilityLabel={`Jar ${pct} percent full`}>
+              <View style={[s.fill, { width: `${pct}%` }]} />
+            </View>
+            <View style={s.cardActions}>
+              <Pressable
+                testID="rename-save-button"
+                nativeID="rename-save-button"
+                accessibilityRole="button"
+                accessibilityLabel={`Save new name for ${item.name}`}
+                onPress={() => saveRename(item)}
+                hitSlop={8}
+                style={({ pressed }) => [s.saveBtn, pressed && s.pressed]}
+              >
+                <Text style={s.saveBtnText}>Save</Text>
+              </Pressable>
+              <Pressable
+                testID="rename-cancel-button"
+                nativeID="rename-cancel-button"
+                accessibilityRole="button"
+                accessibilityLabel={`Cancel renaming ${item.name}`}
+                onPress={cancelRename}
+                hitSlop={8}
+                style={({ pressed }) => [s.ghostBtn, pressed && s.pressed]}
+              >
+                <Text style={s.actionText}>Cancel</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : (
+          <View>
+            <Link href={{ pathname: "/person/[id]", params: { id: item.id } }} asChild>
+              <Pressable
+                testID="person-row"
+                nativeID="person-row"
+                accessibilityRole="button"
+                accessibilityLabel={`${item.name}, ${item.count} of ${JAR_CAPACITY} marbles`}
+                style={({ pressed }) => [pressed && s.pressed]}
+              >
+                <View style={s.cardTop}>
+                  <Text style={s.cardName}>{item.name}</Text>
+                  <Text testID="jar-count" nativeID="jar-count" style={s.cardCount}>
+                    {item.count}/{JAR_CAPACITY} · {pct}%
+                  </Text>
+                </View>
+                <View style={s.track} accessible accessibilityLabel={`Jar ${pct} percent full`}>
+                  <View style={[s.fill, { width: `${pct}%` }]} />
+                </View>
+              </Pressable>
+            </Link>
+            <View style={s.cardActions}>
+              <Pressable
+                testID="rename-person-button"
+                nativeID="rename-person-button"
+                accessibilityRole="button"
+                accessibilityLabel={`Rename ${item.name}`}
+                onPress={() => startRename(item)}
+                hitSlop={8}
+                style={({ pressed }) => [s.ghostBtn, pressed && s.pressed]}
+              >
+                <Text style={s.actionText}>Rename</Text>
+              </Pressable>
+              <Pressable
+                testID="remove-person-button"
+                nativeID="remove-person-button"
+                accessibilityRole="button"
+                accessibilityLabel={`Remove ${item.name}`}
+                accessibilityHint={`Deletes their jar and all ${item.count} marbles`}
+                onPress={() => askRemove(item)}
+                hitSlop={8}
+                style={({ pressed }) => [s.ghostBtn, pressed && s.pressed]}
+              >
+                <Text style={s.removeText}>Remove</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  const q = query.trim();
 
   return (
     <View style={s.page}>
@@ -73,38 +277,56 @@ export default function Home() {
         </Pressable>
       </View>
 
+      <TextInput
+        testID="search-person-input"
+        nativeID="search-person-input"
+        accessibilityLabel="Search people by name"
+        accessibilityHint="Type a name to filter the shelf"
+        value={query}
+        onChangeText={setQuery}
+        placeholder="Search jars…"
+        placeholderTextColor="#A39E93"
+        style={[s.input, s.searchInput]}
+        returnKeyType="search"
+        clearButtonMode="while-editing"
+      />
+
+      <View style={s.sortRow}>
+        {SORTS.map((o) => {
+          const on = sort === o.key;
+          return (
+            <Pressable
+              key={o.key}
+              testID={`sort-${o.key}`}
+              nativeID={`sort-${o.key}`}
+              accessibilityRole="button"
+              accessibilityLabel={o.label}
+              accessibilityState={{ selected: on }}
+              onPress={() => setSort(o.key)}
+              style={({ pressed }) => [s.chip, on && s.chipOn, pressed && s.pressed]}
+            >
+              <Text style={[s.chipText, on && s.chipTextOn]}>{o.short}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
       <FlatList
         data={people}
         keyExtractor={(p) => p.id}
         contentContainerStyle={s.list}
         ListEmptyComponent={
-          <Text style={s.empty}>No jars yet. Add someone above to drop in the first marble.</Text>
+          q ? (
+            <Text testID="empty-state" nativeID="empty-state" style={s.empty}>
+              No jars match “{q}”. Try another name.
+            </Text>
+          ) : (
+            <Text testID="empty-state" nativeID="empty-state" style={s.empty}>
+              No jars yet. Add someone above to drop in the first marble.
+            </Text>
+          )
         }
-        renderItem={({ item }) => (
-          <Link href={{ pathname: "/person/[id]", params: { id: item.id } }} asChild>
-            <Pressable
-              testID="person-row"
-              nativeID="person-row"
-              accessibilityRole="button"
-              accessibilityLabel={`${item.name}, ${item.count} of ${JAR_CAPACITY} marbles`}
-              style={({ pressed }) => [s.card, pressed && s.pressed]}
-            >
-              <View style={s.cardTop}>
-                <Text style={s.cardName}>{item.name}</Text>
-                <Text testID="jar-count" nativeID="jar-count" style={s.cardCount}>
-                  {item.count}/{JAR_CAPACITY} · {Math.round(item.pct * 100)}%
-                </Text>
-              </View>
-              <View
-                style={s.track}
-                accessible
-                accessibilityLabel={`Jar ${Math.round(item.pct * 100)} percent full`}
-              >
-                <View style={[s.fill, { width: `${Math.round(item.pct * 100)}%` }]} />
-              </View>
-            </Pressable>
-          </Link>
-        )}
+        renderItem={({ item }) => renderRow(item)}
       />
     </View>
   );
@@ -133,6 +355,19 @@ const s = StyleSheet.create({
     fontSize: 16,
     color: "#1E1B16",
   },
+  searchInput: { flex: 0, marginBottom: 10 },
+  sortRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 4 },
+  chip: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#E0D8C2",
+    borderRadius: 99,
+    paddingHorizontal: 13,
+    paddingVertical: 8,
+  },
+  chipOn: { backgroundColor: "#1E1B16", borderColor: "#1E1B16" },
+  chipText: { color: "#5C564A", fontWeight: "600", fontSize: 13 },
+  chipTextOn: { color: "#FAF7F0" },
   addBtn: {
     backgroundColor: "#1E1B16",
     borderRadius: 14,
@@ -166,4 +401,16 @@ const s = StyleSheet.create({
     overflow: "hidden",
   },
   fill: { height: "100%", backgroundColor: "#E8A33D", borderRadius: 99 },
+  cardActions: { flexDirection: "row", gap: 8, marginTop: 12 },
+  ghostBtn: { paddingVertical: 6, paddingHorizontal: 4 },
+  actionText: { fontSize: 13, fontWeight: "600", color: "#8A8478" },
+  removeText: { fontSize: 13, fontWeight: "600", color: "#5C564A" },
+  saveBtn: {
+    backgroundColor: "#1E1B16",
+    borderRadius: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    justifyContent: "center",
+  },
+  saveBtnText: { color: "#FAF7F0", fontWeight: "700", fontSize: 13 },
 });
