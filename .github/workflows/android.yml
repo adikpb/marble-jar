@@ -85,31 +85,28 @@ jobs:
       - name: Setup Android SDK
         run: |
           set -euo pipefail
-          sdkmanager_bin="$ANDROID_HOME/cmdline-tools/latest/bin"
-          echo "$sdkmanager_bin" >> "$GITHUB_PATH"
-          export PATH="$sdkmanager_bin:$PATH"
-          sdkmanager --version
 
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          # Prefer the versioned cmdline-tools, fall back to `latest`.
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
+          [ -x "$SDKMANAGER" ] || SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
 
-          sdkmanager --install "platform-tools" "platforms;android-36"
+          # Licenses are the ONLY place `yes |` is safe: sdkmanager keeps
+          # reading stdin there, and any failure is non-fatal because AGP's
+          # sdkDownload accepts already-accepted licenses anyway.
+          yes | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses >/dev/null 2>&1 || true
 
-          # AGP 8.12 (React Native 0.86) chooses its own default build-tools
-          # revision; install it up front so the aapt2 sanity check in the
-          # "Locate and verify APK" step below has a binary to call.
-          build_tools=""
-          for version in 35.0.0 36.0.0; do
-            if yes | sdkmanager --install "build-tools;$version"; then
-              build_tools="$version"
-              break
-            fi
-            echo "build-tools;$version is unavailable, trying the next revision"
-          done
-          if [ -z "$build_tools" ]; then
-            echo "::error::could not install any supported Android build-tools revision"
-            exit 1
-          fi
-          echo "installed build-tools;$build_tools"
+          # NO `yes |` around --install. When the requested packages are
+          # already present sdkmanager exits without reading stdin, so `yes`
+          # takes SIGPIPE and — under `set -o pipefail` — the step fails with
+          # exit 141 even though the install succeeded. That was a false
+          # negative, not a real failure.
+          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --install "platform-tools" "platforms;android-36"
+
+          # Sanity check only: build-tools is NOT installed here. The runner
+          # image already ships build-tools 35.0.0/36.0.0 and AGP fetches
+          # anything genuinely missing via android.builder.sdkDownload, so a
+          # hard failure here would only ever be a false negative again.
+          ls "$ANDROID_HOME/build-tools"
 
       - name: Setup Node
         uses: actions/setup-node@v4
