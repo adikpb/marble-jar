@@ -56,6 +56,9 @@ export default function PersonScreen() {
       </Text>
       <Text
         testID="jar-count"
+        // nativeID -> DOM `id` on web; Maestro's web `id:` selector prefers the
+        // DOM id over aria-label, so it must be kept in sync with testID.
+        nativeID="jar-count"
         style={s.count}
         accessibilityLabel={`${count} of ${JAR_CAPACITY} marbles`}
       >
@@ -81,6 +84,7 @@ export default function PersonScreen() {
       <Text style={s.section}>Log a moment</Text>
       <TextInput
         testID="marble-reason"
+        nativeID="marble-reason"
         accessibilityLabel="Reason"
         accessibilityHint="What happened? e.g. remembered the small thing I mentioned"
         value={reason}
@@ -122,6 +126,7 @@ export default function PersonScreen() {
         </Pressable>
         <Pressable
           testID="add-marble"
+          nativeID="add-marble"
           accessibilityRole="button"
           accessibilityLabel="Add a marble"
           onPress={() => handleDelta(1)}

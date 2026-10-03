@@ -18,9 +18,24 @@
 #   add-person-input   home: person name field
 #   add-person-button  home: "Add" button
 #   person-row         home: a person entry (opens /person/[id])
-#   jar-count          home row count "0/10 · 0%" and person count "0 / 10 marbles · 0%"
+#   jar-count          home row count "0/20 · 0%" and person count "0 / 20 marbles · 0%"
 #   marble-reason      person: reason field
 #   add-marble         person: "+ Marble" button
+#
+# Every one of those testIDs is mirrored as `nativeID` in the app. On web
+# react-native-web renders `testID` as `data-testid` and `nativeID` as the DOM
+# `id`, and Maestro's web driver picks an element's identifier in this order:
+# id -> aria-label -> name -> title -> for -> data-testid. Because the screens
+# carry accessibilityLabels (aria-label), `data-testid` alone is never reached
+# — `nativeID` is what makes `id:` resolve.
+#
+# Maestro's `text:` selector only reads a node's *direct* text children, so
+# `id:` and `text:` can only be combined when both live on the same element
+# (true for jar-count, false for person-row, whose label is nested).
+#
+# The count assertions below hard-code JAR_CAPACITY (lib/store.ts = 20); they must
+# be bumped whenever the capacity changes.
+#
 # Persistence is localStorage on web, so a reload must keep state.
 url: http://localhost:8081/marble-jar
 name: Add a marble to a person and keep it after reload
@@ -39,17 +54,17 @@ name: Add a marble to a person and keep it after reload
     id: add-person-button
 - assertVisible:
     id: person-row
-    text: Maya
+- assertVisible: Maya
 - assertVisible:
     id: jar-count
-    text: 0/10.*
+    text: 0/20.*
 
 # --- Open the person ---------------------------------------------------------
 - tapOn:
     id: person-row
 - assertVisible:
     id: jar-count
-    text: 0\s/10\smarbles.*
+    text: 0\s/20\smarbles.*
 - assertVisible:
     id: marble-reason
 
@@ -64,7 +79,7 @@ name: Add a marble to a person and keep it after reload
 # --- Count went 0 -> 1, reason is in the history -----------------------------
 - assertVisible:
     id: jar-count
-    text: 1\s/10\smarbles.*
+    text: 1\s/20\smarbles.*
 - assertVisible: remembered the small thing
 
 # --- Reload without clearing state: state must persist -----------------------
@@ -79,4 +94,4 @@ name: Add a marble to a person and keep it after reload
           id: person-row
 - assertVisible:
     id: jar-count
-    text: 1\s/10\smarbles.*
+    text: 1\s/20\smarbles.*

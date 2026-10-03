@@ -44,6 +44,13 @@ export default function Home() {
       <View style={s.addRow}>
         <TextInput
           testID="add-person-input"
+          // Maestro's web driver derives `resource-id` from the first of
+          // id / aria-label / name / title / for / data-testid that exists.
+          // `aria-label` (accessibilityLabel) wins over `data-testid`, so
+          // `nativeID` — which react-native-web renders as the DOM `id` — is
+          // required for `id: add-person-input` to resolve. Keep it in sync
+          // with testID.
+          nativeID="add-person-input"
           accessibilityLabel="Person name"
           accessibilityHint="Type a name, then press Add"
           value={name}
@@ -56,6 +63,7 @@ export default function Home() {
         />
         <Pressable
           testID="add-person-button"
+          nativeID="add-person-button"
           accessibilityRole="button"
           accessibilityLabel="Add person"
           onPress={handleAdd}
@@ -76,13 +84,14 @@ export default function Home() {
           <Link href={{ pathname: "/person/[id]", params: { id: item.id } }} asChild>
             <Pressable
               testID="person-row"
+              nativeID="person-row"
               accessibilityRole="button"
               accessibilityLabel={`${item.name}, ${item.count} of ${JAR_CAPACITY} marbles`}
               style={({ pressed }) => [s.card, pressed && s.pressed]}
             >
               <View style={s.cardTop}>
                 <Text style={s.cardName}>{item.name}</Text>
-                <Text testID="jar-count" style={s.cardCount}>
+                <Text testID="jar-count" nativeID="jar-count" style={s.cardCount}>
                   {item.count}/{JAR_CAPACITY} · {Math.round(item.pct * 100)}%
                 </Text>
               </View>

@@ -147,6 +147,10 @@ jobs:
       - name: Maestro tests (web)
         shell: bash
         run: |
+          # maestro writes --output verbatim and does not create parent dirs,
+          # so the junit writer fails with "No such file or directory" and takes
+          # the real assertion failure down with it.
+          mkdir -p "${{ runner.temp }}/maestro-logs"
           maestro test .maestro/*.yml --headless --screen-size 1280x800 \
             --format junit --output "${{ runner.temp }}/maestro-logs/results.xml"
 
