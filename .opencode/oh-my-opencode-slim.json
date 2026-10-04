@@ -10,7 +10,7 @@
         "skills_add": ["agent-browser"]
       },
       "designer": {
-        "skills_add": ["impeccable", "expo-router", "expo-native-ui"]
+        "skills_add": ["impeccable", "expo-router", "expo-native-ui", "agent-browser"]
       },
       "fixer": {
         "skills_add": ["expo-router", "expo-overview", "expo-project-structure", "expo-examples"]
