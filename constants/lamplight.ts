@@ -16,7 +16,8 @@ export const Lamp = {
   cream: "#FBF3E2",
   shelfEdge: "#170D08",
   paperSoft: "#6B5638",
-  cherry: "#C8452C",
+  // Cream on cherry reads 4.9:1 — past WCAG AA for the bold action labels.
+  cherry: "#BC3F27",
   cherryDeep: "#A03420",
   honey: "#D9A441",
   empty: "#453019",

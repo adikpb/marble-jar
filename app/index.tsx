@@ -135,8 +135,9 @@ export default function Home() {
   // state only — the ribbon opens collapsed on every visit.
   const [weekExpanded, setWeekExpanded] = useState(false);
   // Full composer expander: on shelves with jars the header caps at a
-  // compact "Log a moment" row and the working composer lives just below
-  // the first board, so the object precedes its tools. Session state only.
+  // compact "Log a moment" row and the working composer opens directly
+  // below it — one stable home in the header, independent of shelf order
+  // and scroll depth. Session state only.
   const [composerExpanded, setComposerExpanded] = useState(false);
   // Seven-meanings expander: the BRAVING guide retires after one marble, so
   // this quiet line keeps all seven glosses one tap away on every shelf.
@@ -150,9 +151,6 @@ export default function Home() {
   const [loaded, setLoaded] = useState(false);
   const [hasPerson, setHasPerson] = useState(false);
   const [hasMarble, setHasMarble] = useState(false);
-  // Unfiltered shelf size, refreshed alongside the checklist ticks (never
-  // while searching), so the 4+ tool-row threshold can't flicker mid-filter.
-  const [shelfSize, setShelfSize] = useState(0);
   const [openedJar, setOpenedJar] = useState(false);
   const [listDismissed, setListDismissed] = useState(() => readSeen("seen:checklist"));
   // First-marble note is session-only on purpose: the settle is the reward,
@@ -161,10 +159,7 @@ export default function Home() {
   const firstNoteShown = useRef(false);
   const addInputRef = useRef<TextInput>(null);
   const reasonInputRef = useRef<TextInput>(null);
-  // Search homes for the picker overflow: the quiet tool row above the
-  // boards on 4+ shelves, the footer home everywhere else. The overflow
-  // focuses whichever home is showing.
-  const searchTopRef = useRef<TextInput>(null);
+  // Search lives in the footer home: the picker overflow focuses it.
   const searchBottomRef = useRef<TextInput>(null);
   // Reduced motion removes the slide but keeps fades and state changes.
   const reduceMotion = useReducedMotion();
@@ -190,7 +185,6 @@ export default function Home() {
       if (!q) {
         setHasPerson(rows.length > 0);
         setHasMarble(rows.some((r) => r.count > 0));
-        setShelfSize(rows.length);
       }
       setOpenedJar(readSeen("seen:checklist-opened"));
       // Single-jar fast path only: exactly one jar is unambiguous, so it
@@ -409,15 +403,10 @@ export default function Home() {
   // by construction: it needs no marble yet, the quiet line needs marbles.)
   // Second visit, quiet week: one ghost line, no overlay, no coachmark.
   const quietWeek = loaded && people.length > 0 && fresh.length === 0 && hasMarble && !firstNote;
-  // The working composer lives below the first board on returning shelves —
+  // The working composer opens in the header on returning shelves —
   // beside the payoff note when one just landed, so the eye never leaves
   // the spot where the marble was logged.
-  const showComposerBlock = !isFirstRun && (composerExpanded || !!firstNote);
-  // Header-adjacent fast path: once the shelf holds 4+ jars the search +
-  // sorts also sit above the boards, where large shelves can reach them.
-  // Below the threshold the footer home stays the only home. Both homes
-  // read and write the same query/sort state — one shelf, never two.
-  const showTopTools = loaded && !isFirstRun && shelfSize >= 4;
+  const showComposer = !isFirstRun && (composerExpanded || !!firstNote);
 
   // The open-the-jar step links the top visible board — never a jar that
   // is waiting just off the shelf in its Undo window.
@@ -457,41 +446,39 @@ export default function Home() {
     );
   }
 
-  // Shelf tools, one state behind two homes: the footer home below the
-  // jars and, on 4+ shelves, the quiet tool row above the boards. Same
-  // query, same sort, same labels in both places — `top` only changes the
-  // testID suffix and the tighter cluster, never the meaning. The search
-  // keeps the shelf's own noun ("jars") in both the visible placeholder
-  // and the screen-reader name, so the two never disagree.
-  function renderSearchField(top = false) {
+  // Shelf tools, one home: the footer below the jars holds add, search,
+  // and sort. The search keeps the shelf's own noun ("jars") in both the
+  // visible placeholder and the screen-reader name, so the two never
+  // disagree.
+  function renderSearchField() {
     return (
       <TextInput
-        ref={top ? searchTopRef : searchBottomRef}
-        testID={top ? "search-person-input-top" : "search-person-input"}
-        nativeID={top ? "search-person-input-top" : "search-person-input"}
+        ref={searchBottomRef}
+        testID="search-person-input"
+        nativeID="search-person-input"
         accessibilityLabel="Search jars by name"
         accessibilityHint="Filters the shelf as you type"
         value={query}
         onChangeText={setQuery}
         placeholder="Search jars…"
         placeholderTextColor={Lamp.inkFaint}
-        style={[s.field, top ? s.searchFieldTop : s.searchField]}
+        style={[s.field, s.searchField]}
         returnKeyType="search"
         clearButtonMode="while-editing"
       />
     );
   }
 
-  function renderSortRow(top = false) {
+  function renderSortRow() {
     return (
-      <View style={top ? [s.sortRow, s.sortRowTop] : s.sortRow}>
+      <View style={s.sortRow}>
         {SORTS.map((o) => {
           const on = sort === o.key;
           return (
             <Pressable
               key={o.key}
-              testID={top ? `sort-${o.key}-top` : `sort-${o.key}`}
-              nativeID={top ? `sort-${o.key}-top` : `sort-${o.key}`}
+              testID={`sort-${o.key}`}
+              nativeID={`sort-${o.key}`}
               accessibilityRole="button"
               accessibilityLabel={o.label}
               accessibilityState={{ selected: on }}
@@ -508,14 +495,15 @@ export default function Home() {
   }
 
   // The working composer: picker + reason + BRAVING tag + kept/broke.
-  // Lives below the first board on returning shelves (see showComposerBlock)
-  // and stays out of the header entirely, so the boards lead. All testIDs,
-  // tag-scent, carried-mark, and validation behavior unchanged.
+  // Opens directly below its compact row in the header — one stable home,
+  // never riding below a board, so sort order and scroll depth can never
+  // move the log action. All testIDs, tag-scent, carried-mark, and
+  // validation behavior unchanged.
   function renderFullComposer() {
     // Capped picker: the first four jars in shelf order plus the chosen
     // target when it sits outside the four, so the target never vanishes
-    // under the cap. Everything else lives one tap away in search — the
-    // overflow focuses whichever search home is showing.
+    // under the cap. Everything else lives one tap away in the footer
+    // search via an "All jars…" overflow.
     const recentPicks = people.slice(0, 4);
     const chosenOutside =
       logPersonId && !recentPicks.some((p) => p.id === logPersonId)
@@ -561,8 +549,7 @@ export default function Home() {
                 accessibilityLabel={`All ${people.length} jars — focus search to find a jar`}
                 accessibilityHint="Focuses the jar search"
                 onPress={() => {
-                  if (showTopTools) searchTopRef.current?.focus();
-                  else searchBottomRef.current?.focus();
+                  searchBottomRef.current?.focus();
                 }}
                 hitSlop={6}
                 style={({ pressed }) => [s.quietBtn, pressed && s.pressed]}
@@ -656,6 +643,25 @@ export default function Home() {
             <Text style={s.keptBtnText}>+ Kept one</Text>
           </Pressable>
         </View>
+        {/* Confirm chip: the jar + tag say their names before Kept/Broke
+            arms, so a single-jar auto-target or a carried last-tag default
+            can never file silently. */}
+        <Text
+          testID="log-confirm"
+          nativeID="log-confirm"
+          style={s.confirmChip}
+          accessible
+          accessibilityLabel={
+            logPerson
+              ? `Logging for ${logPerson.name} with tag ${logTag || "none"}${
+                  logCarried && logTag ? ", carried from last time" : ""
+                }`
+              : "No jar chosen yet — pick one above"
+          }
+        >
+          For {logPerson ? logPerson.name : "no jar yet — pick one above"} ·{" "}
+          {logTag ? `${logTag}${logCarried ? " · last time" : ""}` : "no tag yet"}
+        </Text>
         {/* Validation arrives as a plain fade: opacity-only feedback,
             so it stays even with reduced motion. */}
         {!!logHint && (
@@ -968,8 +974,8 @@ export default function Home() {
                         : "Log a moment with its why. Focus the composer"
                     }
                     onPress={() => {
-                      // The working composer may sit collapsed below the first
-                      // board: open it first, then land focus in the reason.
+                      // The working composer sits collapsed in the header:
+                      // open it first, then land focus in the reason.
                       if (!isFirstRun && !composerExpanded) setComposerExpanded(true);
                       setTimeout(() => reasonInputRef.current?.focus(), 60);
                     }}
@@ -1026,8 +1032,8 @@ export default function Home() {
               plus one line. The add row keeps its single home above search;
               nothing here takes input, so the happy path can never fail
               with "add someone first". Once a jar lands the preview yields
-              to the compact row, and the working composer settles open
-              below the first board. */}
+              to the compact row, and the working composer opens directly
+              below it. */}
           {isFirstRun ? (
             <View
               style={s.composer}
@@ -1056,6 +1062,11 @@ export default function Home() {
               <Text style={s.compactText}>Log a moment</Text>
             </Pressable>
           )}
+          {/* The working composer opens directly below its compact row — one
+              stable home in the header, never riding below a board, so sort
+              order and scroll depth can never move the log action. */}
+          {showComposer && renderFullComposer()}
+          {showComposer && renderFirstNote()}
           {/* Collapsed only: while the working composer sits below the first
               board, this line sits under the compact row that opens it. When
               expanded the line rides with the working composer instead. */}
@@ -1070,11 +1081,10 @@ export default function Home() {
               other shelf meets add → search → sort after the jars. */}
           {isFirstRun && renderAddRow()}
 
-          {/* The header ends here: title, beginnings, compact composer, Undo.
-              Shelf tools (search, sort) live in the footer home, after the
-              jars — Undo stays above the boards, where the jar just left.
-              On 4+ shelves the same tools also sit here, above the boards,
-              as a quiet cluster that never competes with the composer. */}
+          {/* The header ends here: title, beginnings, composer, Undo.
+              Shelf tools (add, search, sort) live in the one footer home,
+              after the jars — Undo stays above the boards, where the jar
+              just left. */}
 
           {/* Quiet undo, one row per waiting jar: each jar is only hidden,
               never deleted, until its own window closes — Undo cancels so
@@ -1134,19 +1144,6 @@ export default function Home() {
               </View>
             </Animated.View>
           )}
-          {/* Fast path for large shelves: the same search + sorts as the
-              footer home, in a tight quiet cluster above the boards. Gated
-              at 4+ jars so small shelves keep their single footer home and
-              never meet duplicate tools. Add stays in the footer only. */}
-          {showTopTools && (
-            <Animated.View
-              entering={reduceMotion ? undefined : FadeIn.duration(200)}
-              style={s.toolsTop}
-            >
-              {renderSearchField(true)}
-              {(people.length > 0 || q !== "") && renderSortRow(true)}
-            </Animated.View>
-          )}
         </View>
       }
       ListFooterComponent={
@@ -1188,14 +1185,13 @@ export default function Home() {
               </View>
             )}
 
-            {/* Shelf tools after the jars: add → search → sort. Unchanged
-                below, even when the quiet tool row above the boards is
-                showing — both homes share the same query and sort. */}
+            {/* Shelf tools after the jars: add → search → sort — the one
+                home for all three. */}
             {!isFirstRun && renderAddRow(fresh.length === 0)}
 
             {/* Search stays hidden until the first jar lands. */}
-            {!isFirstRun && renderSearchField(false)}
-            {(people.length > 0 || q !== "") && renderSortRow(false)}
+            {!isFirstRun && renderSearchField()}
+            {(people.length > 0 || q !== "") && renderSortRow()}
           </View>
         )
       }
@@ -1250,19 +1246,7 @@ export default function Home() {
           </Text>
         )
       }
-      renderItem={({ item, index }) =>
-        // The working composer + payoff ride directly below the first board,
-        // so the object precedes its tools and DOM order matches the eye.
-        index === 0 && showComposerBlock ? (
-          <View>
-            {renderRow(item, index)}
-            {renderFullComposer()}
-            {renderFirstNote()}
-          </View>
-        ) : (
-          renderRow(item, index)
-        )
-      }
+      renderItem={({ item, index }) => renderRow(item, index)}
     />
   );
 }
@@ -1297,7 +1281,9 @@ const s = StyleSheet.create({
   },
   composerTitle: { fontFamily: Font.display, fontSize: 22, color: Lamp.ink },
   // Compact composer row: the header's capped promise of the working
-  // composer below the first board. Rail language, quieter than the card.
+  // composer below it. Rail language, quieter than the card — kept tight
+  // so the header stack (beginnings + composer entry + Undo) never crowds
+  // small phones.
   compact: {
     flexDirection: "row",
     alignItems: "center",
@@ -1307,12 +1293,12 @@ const s = StyleSheet.create({
     borderColor: Lamp.hairline,
     borderRadius: 99,
     paddingHorizontal: 18,
-    paddingVertical: 13,
-    marginTop: 12,
+    paddingVertical: 12,
+    marginTop: 10,
   },
   compactText: { fontFamily: Font.bodySemi, fontWeight: "600", fontSize: 15, color: Lamp.ink },
-  // The working composer keeps its card weight, relocated: one band gap
-  // below the first board instead of the header stack.
+  // The working composer keeps its card weight: one band gap below its
+  // compact row in the header.
   composerBlock: { marginTop: 14 },
   firstPath: {
     fontFamily: Font.body,
@@ -1341,8 +1327,8 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: Lamp.hairline,
     borderRadius: 20,
-    padding: 16,
-    marginTop: 12,
+    padding: 14,
+    marginTop: 10,
     boxShadow: "0px 6px 16px rgba(0, 0, 0, 0.4)",
     elevation: 4,
   },
@@ -1386,7 +1372,7 @@ const s = StyleSheet.create({
     marginTop: 14,
     textAlign: "center",
   },
-  undoList: { gap: 8, marginTop: 10 },
+  undoList: { gap: 8, marginTop: 8 },
   undoRow: {
     backgroundColor: Lamp.board,
     borderWidth: 1,
@@ -1465,6 +1451,16 @@ const s = StyleSheet.create({
     marginTop: 12,
   },
   logRow: { flexDirection: "row", gap: 10, marginTop: 12 },
+  // Confirm chip: jar + tag named outright before the pair arms, so an
+  // auto-target or a carried default can never file silently.
+  confirmChip: {
+    fontFamily: Font.bodySemi,
+    fontWeight: "600",
+    fontSize: 13,
+    lineHeight: 18,
+    color: Lamp.inkSoft,
+    marginTop: 10,
+  },
   keptBtn: {
     flex: 1,
     backgroundColor: Lamp.cherry,
@@ -1541,12 +1537,6 @@ const s = StyleSheet.create({
   },
   searchField: { marginTop: 10 },
   sortRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10, marginBottom: 14 },
-  // Quiet tool row above the boards (4+ jars): the same controls in a
-  // tighter cluster with no bottom swell, so the tools read as tools and
-  // never compete with the composer card or the checklist above them.
-  toolsTop: { marginTop: 12, gap: 0 },
-  searchFieldTop: { marginTop: 0 },
-  sortRowTop: { marginTop: 8, marginBottom: 2 },
   sort: {
     borderWidth: 1.5,
     borderColor: Lamp.hairline,

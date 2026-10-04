@@ -1,7 +1,7 @@
 // The jar room: one person's trust, sitting in lamplight. The vessel fills
 // with real marble glass, the weeks read as a staff, every moment a slip.
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Animated, {
   Easing,
@@ -17,7 +17,6 @@ import {
   addMarble,
   BRAVING_TAGS,
   type Chapter,
-  completeMarble,
   getChapters,
   getJarStats,
   getLiveChapter,
@@ -28,9 +27,11 @@ import {
   listMarbles,
   type Marble,
   type Person,
+  removeMarble,
   startOfWeek,
   type TagBreakdownRow,
   tagHue,
+  updateMarble,
   type WeeklyTrendPoint,
 } from "../../lib/store";
 
@@ -150,12 +151,23 @@ export default function PersonScreen() {
   const [breakdown, setBreakdown] = useState<TagBreakdownRow[]>([]);
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [hasMore, setHasMore] = useState(false);
-  const [expandedWhy, setExpandedWhy] = useState<string | null>(null);
-  const [whyReason, setWhyReason] = useState("");
-  const [whyTag, setWhyTag] = useState("");
-  // The why-repair card speaks like the composers: an empty save raises the
+  // Per-marble correction: one slip edits at a time — words, tag, and the
+  // kept/broke mark (a flip arms first, then confirms with a second tap).
+  // Blank-only "add the why" repair is gone: every slip is fully editable,
+  // so a wrong tap never needs an offsetting marble to fix it.
+  const [editingMarbleId, setEditingMarbleId] = useState<string | null>(null);
+  const [editReason, setEditReason] = useState("");
+  const [editTag, setEditTag] = useState("");
+  const [editDelta, setEditDelta] = useState<1 | -1>(1);
+  const [flipArmed, setFlipArmed] = useState(false);
+  // The edit card speaks like the composers: an empty save raises the
   // shared why line instead of returning silently.
-  const [whyHint, setWhyHint] = useState<string | null>(null);
+  const [editHint, setEditHint] = useState<string | null>(null);
+  // Per-marble removal reuses the shelf's idiom: a confirmed slip waits its
+  // own 5s window off the feed before the store is touched, so Undo only
+  // ever cancels. Unmount abandons the wait, not the marble.
+  const [pendingMarbles, setPendingMarbles] = useState<{ id: string; secsLeft: number }[]>([]);
+  const marbleTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const [revision, setRevision] = useState(0);
   const [justLogged, setJustLogged] = useState<string | null>(null);
   // First fetch still in flight: empties stay quiet until the jar answers,
@@ -172,6 +184,15 @@ export default function PersonScreen() {
   const [meaningsOpen, setMeaningsOpen] = useState(false);
   // Reduced motion removes the slide but keeps fades and state changes.
   const reduceMotion = useReducedMotion();
+  // The composer's stable entry at the top of the room: focusing the reason
+  // field scrolls it into view on every platform (native scrolls to focused
+  // inputs; web moves DOM focus into view), so a task visit never scrolls
+  // past vessel + chapters + trend to act.
+  const scrollRef = useRef<ScrollView>(null);
+  const reasonRef = useRef<TextInput>(null);
+  function jumpToComposer() {
+    reasonRef.current?.focus();
+  }
 
   const selected: Chapter | null = selectedId
     ? (chapters.find((c) => c.id === selectedId) ?? live)
@@ -227,6 +248,29 @@ export default function PersonScreen() {
     if (personId) markSeen("seen:checklist-opened");
   }, [personId]);
 
+  // A pending marble removal never touches the store until its window
+  // closes. Unmount abandons the wait, not the marble.
+  useEffect(
+    () => () => {
+      for (const t of marbleTimers.current.values()) clearTimeout(t);
+      marbleTimers.current.clear();
+    },
+    [],
+  );
+
+  // One shared tick for every queued marble countdown: a plain state step
+  // once a second, no looped animation.
+  const hasPendingMarbles = pendingMarbles.length > 0;
+  useEffect(() => {
+    if (!hasPendingMarbles) return;
+    const iv = setInterval(() => {
+      setPendingMarbles((prev) =>
+        prev.map((p) => ({ ...p, secsLeft: Math.max(0, p.secsLeft - 1) })),
+      );
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [hasPendingMarbles]);
+
   async function handleDelta(delta: 1 | -1) {
     if (!personId) return;
     if (!reason.trim() || !tag) {
@@ -261,29 +305,77 @@ export default function PersonScreen() {
   function selectChapter(chapterId: string) {
     setSelectedId(chapterId);
     setLimit(PAGE_SIZE);
-    setExpandedWhy(null);
+    setEditingMarbleId(null);
     setJustLogged(null);
     setRevision((r) => r + 1);
   }
 
-  function openWhy(m: Marble) {
-    setExpandedWhy(m.id);
-    setWhyReason("");
-    setWhyTag(m.bravingTag.trim());
-    setWhyHint(null);
+  function openEditor(m: Marble) {
+    setEditingMarbleId(m.id);
+    setEditReason(m.reason);
+    setEditTag(m.bravingTag.trim());
+    setEditDelta(m.delta);
+    setFlipArmed(false);
+    setEditHint(null);
   }
 
-  async function saveWhy(m: Marble) {
-    if ((!m.reason.trim() && !whyReason.trim()) || (!m.bravingTag.trim() && !whyTag)) {
-      setWhyHint(WHY_HINT);
+  function cancelEditor() {
+    setEditingMarbleId(null);
+    setEditHint(null);
+    setFlipArmed(false);
+  }
+
+  // The kept/broke flip arms on the first tap and lands on the second, so a
+  // slip's whole meaning can't change under one stray tap. Tapping the side
+  // the marble already stands on disarms.
+  function tapFlip(next: 1 | -1, current: 1 | -1) {
+    if (next === current) {
+      setEditDelta(current);
+      setFlipArmed(false);
       return;
     }
-    await completeMarble(m.id, whyReason, whyTag);
-    setExpandedWhy(null);
-    setWhyReason("");
-    setWhyTag("");
-    setWhyHint(null);
+    if (flipArmed && editDelta === next) {
+      setFlipArmed(false);
+      return;
+    }
+    setEditDelta(next);
+    setFlipArmed(true);
+  }
+
+  async function saveEditor(m: Marble) {
+    if (!editReason.trim() || !editTag) {
+      setEditHint(WHY_HINT);
+      return;
+    }
+    await updateMarble(m.id, { reason: editReason, bravingTag: editTag, delta: editDelta });
+    setEditingMarbleId(null);
+    setEditHint(null);
+    setFlipArmed(false);
     setRevision((r) => r + 1);
+  }
+
+  async function finalizeMarbleRemove(id: string) {
+    marbleTimers.current.delete(id);
+    setPendingMarbles((prev) => prev.filter((p) => p.id !== id));
+    await removeMarble(id).catch(() => undefined);
+    setRevision((r) => r + 1);
+  }
+
+  function requestMarbleRemove(id: string) {
+    if (pendingMarbles.some((p) => p.id === id)) return;
+    if (editingMarbleId === id) setEditingMarbleId(null);
+    setPendingMarbles((prev) => [...prev, { id, secsLeft: 5 }]);
+    const t = setTimeout(() => {
+      void finalizeMarbleRemove(id);
+    }, 5000);
+    marbleTimers.current.set(id, t);
+  }
+
+  function cancelMarbleRemove(id: string) {
+    const t = marbleTimers.current.get(id);
+    if (t) clearTimeout(t);
+    marbleTimers.current.delete(id);
+    setPendingMarbles((prev) => prev.filter((p) => p.id !== id));
   }
 
   const jarPct = Math.round(pct * 100);
@@ -370,6 +462,7 @@ export default function PersonScreen() {
 
   return (
     <ScrollView
+      ref={scrollRef}
       style={s.page}
       contentContainerStyle={s.content}
       keyboardShouldPersistTaps="handled"
@@ -403,6 +496,24 @@ export default function PersonScreen() {
       >
         {count} of {JAR_CAPACITY} marbles · {jarPct}%
       </Text>
+      {/* The composer's stable home at the top of the room: one entry that
+          never moves with scroll depth, jumping straight to the log form
+          below the trend. Hidden while revisiting a closed chapter, where
+          nothing can be added. */}
+      {!viewingPast && (
+        <Pressable
+          testID="jump-to-composer"
+          nativeID="jump-to-composer"
+          accessibilityRole="button"
+          accessibilityLabel="Log a moment. Jump to the composer."
+          accessibilityHint="Moves focus to the log form below"
+          onPress={jumpToComposer}
+          hitSlop={6}
+          style={({ pressed }) => [s.jump, pressed && s.pressed]}
+        >
+          <Text style={s.jumpText}>Log a moment</Text>
+        </Pressable>
+      )}
 
       <View style={s.vesselWrap}>
         <View style={s.vessel} accessible accessibilityLabel={`Jar ${jarPct} percent full`}>
@@ -602,6 +713,7 @@ export default function PersonScreen() {
           )}
           <Text style={s.section}>Log a moment</Text>
           <TextInput
+            ref={reasonRef}
             testID="marble-reason"
             nativeID="marble-reason"
             accessibilityLabel="Reason"
@@ -686,6 +798,19 @@ export default function PersonScreen() {
               <Text style={s.btnSolidText}>+ Kept one</Text>
             </Pressable>
           </View>
+          {/* Confirm chip: the jar + tag say their names before Kept/Broke
+              arms, so a carried last-tag default can never file silently. */}
+          <Text
+            testID="jar-log-confirm"
+            nativeID="jar-log-confirm"
+            style={s.confirmChip}
+            accessible
+            accessibilityLabel={`Logging for ${person.name} with tag ${tag || "none"}${
+              tagCarried && tag ? ", carried from last time" : ""
+            }`}
+          >
+            For {person.name} · {tag ? `${tag}${tagCarried ? " · last time" : ""}` : "no tag yet"}
+          </Text>
           {!!formHint && (
             <Text style={s.hint} accessibilityRole="alert">
               {formHint}
@@ -738,8 +863,56 @@ export default function PersonScreen() {
                 </Text>
               </View>
               {g.items.map((item) => {
-                const needsWhy = !viewingPast && (!item.reason.trim() || !item.bravingTag.trim());
-                const expanded = expandedWhy === item.id;
+                // A slip waiting out its removal window leaves an Undo row in
+                // its place — the marble is only hidden, never deleted, until
+                // its window closes. Undo cancels so no delete ever happens.
+                const pending = pendingMarbles.find((p) => p.id === item.id);
+                if (pending) {
+                  const single = pendingMarbles.length === 1;
+                  const secs = Math.max(0, pending.secsLeft);
+                  return (
+                    <View key={item.id} style={s.feedRow}>
+                      <View style={s.markCol}>
+                        <View style={s.markStem} />
+                      </View>
+                      <View
+                        style={s.mUndo}
+                        testID={single ? "marble-undo" : `marble-undo-${item.id}`}
+                        nativeID={single ? "marble-undo" : `marble-undo-${item.id}`}
+                        accessible
+                        accessibilityRole="alert"
+                        accessibilityLabel={`Marble leaving the jar. Undo is available for ${secs} more seconds.`}
+                      >
+                        <Text style={s.mUndoText} numberOfLines={1}>
+                          Lifting off the slip ·{" "}
+                          <Text
+                            testID={
+                              single ? "marble-undo-countdown" : `marble-undo-countdown-${item.id}`
+                            }
+                            nativeID={
+                              single ? "marble-undo-countdown" : `marble-undo-countdown-${item.id}`
+                            }
+                            style={s.mUndoSecs}
+                          >
+                            Undo within {secs}s
+                          </Text>
+                        </Text>
+                        <Pressable
+                          testID={single ? "marble-undo-button" : `marble-undo-button-${item.id}`}
+                          nativeID={single ? "marble-undo-button" : `marble-undo-button-${item.id}`}
+                          accessibilityRole="button"
+                          accessibilityLabel="Undo removing this marble"
+                          onPress={() => cancelMarbleRemove(item.id)}
+                          hitSlop={8}
+                          style={({ pressed }) => [s.quietBtn, pressed && s.pressed]}
+                        >
+                          <Text style={s.mUndoAction}>Undo</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  );
+                }
+                const editing = !viewingPast && editingMarbleId === item.id;
                 const inner = (
                   <View key={item.id} style={s.feedRow}>
                     <View style={s.markCol}>
@@ -760,46 +933,88 @@ export default function PersonScreen() {
                         removed={item.delta < 0}
                         meta={`${item.delta > 0 ? "+1" : "−1"}${item.bravingTag ? ` · ${item.bravingTag}` : " · untagged"} · ${dayLabel(item.ts)}`}
                       />
-                      {needsWhy &&
-                        (expanded ? (
-                          <View style={s.whyCard}>
-                            {!item.reason.trim() && (
-                              <TextInput
-                                testID="why-reason"
-                                nativeID="why-reason"
-                                accessibilityLabel="Missing reason"
-                                accessibilityHint="What happened in this moment?"
-                                value={whyReason}
-                                onChangeText={(t) => {
-                                  setWhyReason(t);
-                                  setWhyHint(null);
-                                }}
-                                placeholder="What happened?"
-                                placeholderTextColor={Lamp.inkFaint}
-                                style={s.field}
-                              />
-                            )}
-                            {!item.bravingTag.trim() && (
-                              <View>
-                                <Text style={s.fieldLabel}>BRAVING tag</Text>
-                                <TagField
-                                  value={whyTag}
-                                  onChange={(t) => {
-                                    setWhyTag(t);
-                                    setWhyHint(null);
-                                  }}
-                                  glosses={TAG_GLOSSES}
-                                  idPrefix="why-tag-"
-                                />
-                              </View>
+                      {!viewingPast &&
+                        (editing ? (
+                          <View style={s.editCard}>
+                            <TextInput
+                              testID="marble-edit-reason"
+                              nativeID="marble-edit-reason"
+                              accessibilityLabel="Edit what happened"
+                              accessibilityHint="A few words about the moment"
+                              value={editReason}
+                              onChangeText={(t) => {
+                                setEditReason(t);
+                                setEditHint(null);
+                              }}
+                              placeholder="What happened?"
+                              placeholderTextColor={Lamp.inkFaint}
+                              style={s.field}
+                            />
+                            <Text style={s.fieldLabel}>BRAVING tag</Text>
+                            <TagField
+                              value={editTag}
+                              onChange={(t) => {
+                                setEditTag(t);
+                                setEditHint(null);
+                              }}
+                              glosses={TAG_GLOSSES}
+                              idPrefix="edit-tag-"
+                            />
+                            <View style={s.flipRow}>
+                              <Pressable
+                                testID="marble-edit-kept"
+                                nativeID="marble-edit-kept"
+                                accessibilityRole="button"
+                                accessibilityLabel="Mark this marble kept"
+                                accessibilityState={{ selected: editDelta > 0 }}
+                                onPress={() => tapFlip(1, item.delta)}
+                                hitSlop={6}
+                                style={({ pressed }) => [
+                                  s.flipBtn,
+                                  editDelta > 0 && s.flipOn,
+                                  pressed && s.pressed,
+                                ]}
+                              >
+                                <Text style={[s.flipText, editDelta > 0 && s.flipTextOn]}>
+                                  + Kept
+                                </Text>
+                              </Pressable>
+                              <Pressable
+                                testID="marble-edit-broke"
+                                nativeID="marble-edit-broke"
+                                accessibilityRole="button"
+                                accessibilityLabel="Mark this marble broke"
+                                accessibilityState={{ selected: editDelta < 0 }}
+                                onPress={() => tapFlip(-1, item.delta)}
+                                hitSlop={6}
+                                style={({ pressed }) => [
+                                  s.flipBtn,
+                                  editDelta < 0 && s.flipOn,
+                                  pressed && s.pressed,
+                                ]}
+                              >
+                                <Text style={[s.flipText, editDelta < 0 && s.flipTextOn]}>
+                                  − Broke
+                                </Text>
+                              </Pressable>
+                            </View>
+                            {flipArmed && (
+                              <Text
+                                testID="marble-edit-flip-confirm"
+                                nativeID="marble-edit-flip-confirm"
+                                style={s.hint}
+                              >
+                                Tap {editDelta > 0 ? "Kept" : "Broke"} again to confirm — the count
+                                shifts with it.
+                              </Text>
                             )}
                             <View style={s.btnRow}>
                               <Pressable
-                                testID="why-cancel"
-                                nativeID="why-cancel"
+                                testID="marble-edit-cancel"
+                                nativeID="marble-edit-cancel"
                                 accessibilityRole="button"
-                                accessibilityLabel="Cancel adding the why"
-                                onPress={() => setExpandedWhy(null)}
+                                accessibilityLabel="Cancel editing this marble"
+                                onPress={cancelEditor}
                                 style={({ pressed }) => [
                                   s.btnGhost,
                                   s.btnSmall,
@@ -809,42 +1024,56 @@ export default function PersonScreen() {
                                 <Text style={s.btnGhostTextSmall}>Cancel</Text>
                               </Pressable>
                               <Pressable
-                                testID="why-save"
-                                nativeID="why-save"
+                                testID="marble-edit-save"
+                                nativeID="marble-edit-save"
                                 accessibilityRole="button"
-                                accessibilityLabel="Save the why"
-                                onPress={() => saveWhy(item)}
+                                accessibilityLabel="Save changes to this marble"
+                                onPress={() => saveEditor(item)}
                                 style={({ pressed }) => [
                                   s.btnSolid,
                                   s.btnSmall,
                                   pressed && s.pressed,
                                 ]}
                               >
-                                <Text style={s.btnSolidTextSmall}>Save</Text>
+                                <Text style={s.btnSolidTextSmall}>Save changes</Text>
                               </Pressable>
                             </View>
-                            {!!whyHint && (
+                            {!!editHint && (
                               <Text
-                                testID="why-hint"
-                                nativeID="why-hint"
+                                testID="marble-edit-hint"
+                                nativeID="marble-edit-hint"
                                 style={s.hint}
                                 accessibilityRole="alert"
                               >
-                                {whyHint}
+                                {editHint}
                               </Text>
                             )}
                           </View>
                         ) : (
-                          <Pressable
-                            testID={`why-${item.id}`}
-                            nativeID={`why-${item.id}`}
-                            accessibilityRole="button"
-                            accessibilityLabel="Add the missing why for this marble"
-                            onPress={() => openWhy(item)}
-                            style={({ pressed }) => [s.whyPill, pressed && s.pressed]}
-                          >
-                            <Text style={s.whyPillText}>Add the why</Text>
-                          </Pressable>
+                          <View style={s.slipActions}>
+                            <Pressable
+                              testID={`marble-edit-${item.id}`}
+                              nativeID={`marble-edit-${item.id}`}
+                              accessibilityRole="button"
+                              accessibilityLabel="Edit this marble's words, tag, or mark"
+                              onPress={() => openEditor(item)}
+                              hitSlop={8}
+                              style={({ pressed }) => [s.quietBtn, pressed && s.pressed]}
+                            >
+                              <Text style={s.quietBtnText}>Edit</Text>
+                            </Pressable>
+                            <Pressable
+                              testID={`marble-remove-${item.id}`}
+                              nativeID={`marble-remove-${item.id}`}
+                              accessibilityRole="button"
+                              accessibilityLabel="Remove this marble from the jar"
+                              onPress={() => requestMarbleRemove(item.id)}
+                              hitSlop={8}
+                              style={({ pressed }) => [s.quietBtn, pressed && s.pressed]}
+                            >
+                              <Text style={s.quietBtnText}>Remove</Text>
+                            </Pressable>
+                          </View>
                         ))}
                     </View>
                   </View>
@@ -910,6 +1139,21 @@ const s = StyleSheet.create({
     color: Lamp.inkSoft,
     marginTop: 4,
   },
+  // Stable log entry at the top of the room: the same rail language as the
+  // shelf's compact row, so both surfaces promise the action in one place.
+  jump: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: Lamp.board,
+    borderWidth: 1,
+    borderColor: Lamp.hairline,
+    borderRadius: 99,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    marginTop: 12,
+  },
+  jumpText: { fontFamily: Font.bodySemi, fontWeight: "600", fontSize: 15, color: Lamp.ink },
   vesselWrap: { alignItems: "center", marginVertical: 20 },
   vessel: {
     width: 208,
@@ -1041,6 +1285,16 @@ const s = StyleSheet.create({
     marginBottom: 8,
   },
   btnRow: { flexDirection: "row", gap: 10, marginTop: 14 },
+  // Confirm chip: jar + tag named outright before the pair arms, so a
+  // carried default can never file silently.
+  confirmChip: {
+    fontFamily: Font.bodySemi,
+    fontWeight: "600",
+    fontSize: 13,
+    lineHeight: 18,
+    color: Lamp.inkSoft,
+    marginTop: 10,
+  },
   btnSolid: {
     flex: 1,
     backgroundColor: Lamp.cherry,
@@ -1151,22 +1405,53 @@ const s = StyleSheet.create({
   markRing: { width: 15, height: 15, borderRadius: 7.5, borderWidth: 2.5, marginTop: 14 },
   markStem: { flex: 1, width: 2, backgroundColor: Lamp.hairline, marginTop: 4, minHeight: 8 },
   feedBody: { flex: 1 },
-  whyPill: {
-    alignSelf: "flex-start",
-    marginTop: 8,
+  // Quiet correction row under every live slip: editing is as caring as
+  // logging, so it sits in the open — never behind a missing-why gate.
+  slipActions: { flexDirection: "row", gap: 14, marginTop: 4, alignItems: "center" },
+  editCard: { marginTop: 10, gap: 2 },
+  // Kept/broke flip inside the editor: two quiet halves, the standing side
+  // lit. A flip arms first and confirms on the second tap.
+  flipRow: { flexDirection: "row", gap: 8, marginTop: 12 },
+  flipBtn: {
+    flex: 1,
     borderWidth: 1.5,
     borderColor: Lamp.hairline,
     borderRadius: 99,
-    paddingHorizontal: 15,
+    paddingHorizontal: 14,
     paddingVertical: 9,
+    alignItems: "center",
   },
-  whyPillText: {
+  flipOn: { backgroundColor: Lamp.ink, borderColor: Lamp.ink },
+  flipText: { fontFamily: Font.bodySemi, fontWeight: "600", fontSize: 13.5, color: Lamp.inkSoft },
+  flipTextOn: { color: Lamp.ground },
+  // Marble-level Undo: the same voice as the shelf's jar queue, one size
+  // down so it sits inside the feed row it replaces.
+  mUndo: {
+    flex: 1,
+    backgroundColor: Lamp.board,
+    borderWidth: 1,
+    borderColor: Lamp.hairline,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  mUndoText: {
+    fontFamily: Font.body,
+    fontSize: 13.5,
+    lineHeight: 19,
+    color: Lamp.inkSoft,
+    flex: 1,
+  },
+  mUndoSecs: { fontFamily: Font.bodySemi, fontWeight: "600", color: Lamp.inkSoft },
+  mUndoAction: {
     fontFamily: Font.bodySemi,
     fontWeight: "600",
     fontSize: 13.5,
-    color: Lamp.inkSoft,
+    color: Lamp.ink,
   },
-  whyCard: { marginTop: 10, gap: 2 },
   moreBtn: {
     marginTop: 12,
     borderRadius: 14,

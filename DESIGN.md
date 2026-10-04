@@ -15,7 +15,7 @@ colors:
   paper-deep: "#EAD9B8"
   paper-ink: "#2B1E11"
   paper-soft: "#6B5638"
-  cherry: "#C8452C"
+  cherry: "#BC3F27"
   cherry-deep: "#A03420"
   honey: "#D9A441"
   empty-ring: "#453019"
@@ -127,6 +127,9 @@ components:
     # rest with the hue carried only by the pin; floods with its own hue
     # when selected (paper-ink label, solid dark pin). Tap-to-clear; gloss
     # reads once below the row, marking a carried last-tag default.
+    # Long-press (hover/focus on web) any pill to peek its gloss without
+    # selecting. A confirm chip above the Kept/Broke pair names the jar +
+    # tag outright before either arms.
     backgroundColor: "{colors.board}"
     textColor: "{colors.ink-soft}"
     typography: "{typography.label}"
@@ -270,9 +273,10 @@ action and meaning.
   removal. **Paper Ink:** text and marks on paper. **Paper Soft:** the small
   meta line on a slip (who, tag, day).
 - **Cream:** the brightest step, reserved for text sitting on cherry.
-  Cream-on-cherry computes 4.44:1 — 0.06 under WCAG AA for the 15–16px bold
-  action labels. This is accepted tension, not a violation: never brighten
-  either value to chase the ratio; reach for weight, size, or spacing instead.
+  Cream-on-cherry computes 4.9:1, past WCAG AA for the 15–16px bold
+  action labels. Cherry was deepened one step to earn the ratio while
+  keeping its magnet-red character; never brighten the cream to chase it
+  further — reach for weight, size, or spacing instead.
 - **Empty Ring:** the stroke color of a marble slot with nothing in it.
 
 ### Named Rules
@@ -352,19 +356,19 @@ the gap that opens a new band of content.
 
 Vertical order on the shelf is the order of use: question, the beginnings
 checklist (collapsing to a rail once all three land), a compact "Log a
-moment" row, transient notes (the first-marble payoff, the undo queue),
-then the shelf boards themselves — with the working composer riding just
-below the first board once opened, so the jars lead and the tools follow.
-A quiet search-and-sort cluster also sits above the boards once the shelf
-holds 4+ jars; below the threshold the footer home is the only home, and
-both homes share one query and sort. After the boards comes the footer
-home for reflection and tools — the week's ribbon opening at three slips
-behind a "Show the week" expander, then the add field, search, and sort.
-On a first run the composer rests as a two-line preview and the add row
-keeps its pre-jar home above the bare-shelf sentence. The primary action
-— logging a moment — is above the fold and never behind navigation. On
-the jar screen the order is: name and count, the vessel, chapters, the week
-chart and tag split, the log composer, then the history feed, then the sign-off.
+moment" row with the working composer opening directly below it — one
+stable home in the header, independent of shelf order and scroll depth —
+transient notes (the first-marble payoff, the undo queue), then the shelf
+boards themselves. After the boards comes the footer home for reflection
+and tools — the week's ribbon opening at three slips behind a "Show the
+week" expander, then the add field, search, and sort: the one home for
+all three, on small shelves and large ones alike. On a first run the
+composer rests as a two-line preview and the add row keeps its pre-jar
+home above the bare-shelf sentence. The primary action — logging a
+moment — is above the fold and never behind navigation. On the jar
+screen the order is: name and count, a "Log a moment" jump entry, the
+vessel, chapters, the week chart and tag split, the log composer, then
+the history feed, then the sign-off.
 
 Rows wrap rather than scroll where they can: the jar picker (capped at four
 pills plus the chosen target, the rest one tap away in search via an "All
@@ -467,7 +471,10 @@ no gradient fills anywhere in the product.
   the chosen pill floods with its own hue (`paper-ink` label, solid dark pin,
   hue edge). Tap-to-clear back to untagged; the chosen tag's gloss reads once
   below the row, and a carried last-tag default is marked there ("Reliability ·
-  last time") so a stale default never logs silently. Fill + edge + label + pin
+  last time") so a stale default never logs silently. Long-press — hover or
+  keyboard-focus on web — peeks any pill's gloss without selecting it, so the
+  teaching never retires. A confirm chip above the Kept/Broke pair names the
+  jar + tag outright before either arms. Fill + edge + label + pin
   all change with state, so selection is never color-only.
 
 ### Cards / Containers
@@ -545,7 +552,10 @@ magnet pin in the tag hue with its own small shadow, the reason in Caveat 20px
 (`+1 · Integrity · Mar 4`, or `−1 · untagged · Mar 4`). A removal prints on
 `paper-deep` at 0.82 opacity with the words struck through in a warm brown.
 The slip falls back to "Marble added" / "Marble removed" when no reason was
-written, so the feed never shows an empty rectangle.
+written, so the feed never shows an empty rectangle. Every live slip carries
+a quiet Edit + Remove row: editing rewrites words, tag, and the kept/broke
+mark (a flip arms first, then confirms), and removing reuses the shelf's 5s
+Undo-only-cancel window — correcting a marble is as caring as logging one.
 
 ### Week Chart & Tag Split
 

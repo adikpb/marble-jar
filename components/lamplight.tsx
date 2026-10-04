@@ -1,6 +1,7 @@
 // Lamplight shared pieces: marble dots, tag fields, pinned slips.
 // One world owns the page, so every screen draws from these.
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Font, Lamp } from "../constants/lamplight";
 import { JAR_CAPACITY, tagHue } from "../lib/store";
 
@@ -68,7 +69,9 @@ export function MarbleDots({
 // tight so the composer stays a composer. Tapping the chosen pill clears
 // back to untagged. The chosen tag's gloss reads once below the row; a
 // carried last-tag default is marked there ("Reliability · last time") so a
-// stale default never logs silently. Fill + edge + label + pin all change
+// stale default never logs silently. The teaching never retires: long-press
+// a pill — or hover / focus it on web — to peek its one-line gloss below
+// the row without selecting it. Fill + edge + label + pin all change
 // with state, so meaning is never color-only.
 export function TagField({
   value,
@@ -84,9 +87,15 @@ export function TagField({
   carried?: boolean;
 }) {
   const tags = Object.keys(glosses);
+  // Peeked gloss: the tag last long-pressed, hovered, or keyboard-focused.
+  // Never a selection — it only borrows the gloss line until a tap chooses.
+  const [peek, setPeek] = useState<string | null>(null);
   const activeGloss = value ? (glosses[value] ?? "") : "";
+  const peekGloss = !value && peek ? (glosses[peek] ?? "") : "";
   const showCarried = carried && !!value && !!activeGloss;
-  const glossLine = showCarried ? `${value} · last time — ${activeGloss}` : activeGloss;
+  const glossLine = showCarried
+    ? `${value} · last time — ${activeGloss}`
+    : activeGloss || (peek && peekGloss ? `${peek} — ${peekGloss}` : "");
   return (
     <View>
       <View style={tf.list}>
@@ -107,7 +116,17 @@ export function TagField({
                   ? `${t}. ${gloss}${isCarried ? ", carried from last time" : ""}${active ? ", selected" : ""}`
                   : `${t}${isCarried ? ", carried from last time" : ""}${active ? ", selected" : ""}`
               }
-              onPress={() => onChange(active ? "" : t)}
+              accessibilityHint={active ? undefined : `Long-press to hear what ${t} means`}
+              onPress={() => {
+                setPeek(null);
+                onChange(active ? "" : t);
+              }}
+              onLongPress={() => setPeek(t)}
+              onHoverIn={() => setPeek(t)}
+              onHoverOut={() => setPeek((cur) => (cur === t ? null : cur))}
+              onFocus={() => setPeek(t)}
+              onBlur={() => setPeek((cur) => (cur === t ? null : cur))}
+              {...(Platform.OS === "web" ? ({ title: gloss } as object) : null)}
               hitSlop={6}
               style={({ pressed }) => [
                 tf.field,
@@ -133,7 +152,17 @@ export function TagField({
           );
         })}
       </View>
-      {!!activeGloss && <Text style={tf.glossLine}>{glossLine}</Text>}
+      {!!glossLine && (
+        <Text
+          testID={`${idPrefix}gloss`}
+          nativeID={`${idPrefix}gloss`}
+          style={tf.glossLine}
+          accessible
+          accessibilityLabel={glossLine}
+        >
+          {glossLine}
+        </Text>
+      )}
     </View>
   );
 }

@@ -209,6 +209,38 @@ export async function completeMarble(id: string, reason: string, tag: string): P
   );
 }
 
+// Full per-marble correction: words, tag, and kept/broke can all be fixed
+// after the fact, so a misfiled moment never needs an offsetting marble.
+export async function updateMarble(
+  id: string,
+  patch: { reason?: string; bravingTag?: string; delta?: 1 | -1 },
+): Promise<void> {
+  migrateWeb();
+  const marbles = readWeb<Marble[]>(M_KEY, []);
+  if (!marbles.some((m) => m.id === id)) return;
+  writeWeb(
+    M_KEY,
+    marbles.map((m) =>
+      m.id === id
+        ? {
+            ...m,
+            reason: patch.reason !== undefined ? patch.reason.trim() : m.reason,
+            bravingTag: patch.bravingTag !== undefined ? patch.bravingTag.trim() : m.bravingTag,
+            delta: patch.delta ?? m.delta,
+          }
+        : m,
+    ),
+  );
+}
+
+export async function removeMarble(id: string): Promise<void> {
+  migrateWeb();
+  writeWeb(
+    M_KEY,
+    readWeb<Marble[]>(M_KEY, []).filter((m) => m.id !== id),
+  );
+}
+
 export async function getJarStats(
   personId: string,
   chapterId?: string,

@@ -220,6 +220,27 @@ export async function completeMarble(id: string, reason: string, tag: string): P
   ]);
 }
 
+// Full per-marble correction: words, tag, and kept/broke can all be fixed
+// after the fact, so a misfiled moment never needs an offsetting marble.
+export async function updateMarble(
+  id: string,
+  patch: { reason?: string; bravingTag?: string; delta?: 1 | -1 },
+): Promise<void> {
+  if (patch.reason !== undefined) {
+    db().runSync(`UPDATE marbles SET reason = ? WHERE id = ?`, [patch.reason.trim(), id]);
+  }
+  if (patch.bravingTag !== undefined) {
+    db().runSync(`UPDATE marbles SET bravingTag = ? WHERE id = ?`, [patch.bravingTag.trim(), id]);
+  }
+  if (patch.delta !== undefined) {
+    db().runSync(`UPDATE marbles SET delta = ? WHERE id = ?`, [patch.delta, id]);
+  }
+}
+
+export async function removeMarble(id: string): Promise<void> {
+  db().runSync(`DELETE FROM marbles WHERE id = ?`, [id]);
+}
+
 export async function getJarStats(
   personId: string,
   chapterId?: string,
