@@ -123,10 +123,12 @@ components:
     rounded: "{rounded.pill}"
     padding: "9px 15px"
   tag-field:
-    # One pattern on both composers: hue flood at rest, board-raised + 2px hue
-    # edge when selected. Tap-to-clear; gloss reads once below the row.
-    backgroundColor: "{colors.tag-boundaries}"
-    textColor: "{colors.paper-ink}"
+    # One pattern on both composers: neutral board pill + hairline edge at
+    # rest with the hue carried only by the pin; floods with its own hue
+    # when selected (paper-ink label, solid dark pin). Tap-to-clear; gloss
+    # reads once below the row, marking a carried last-tag default.
+    backgroundColor: "{colors.board}"
+    textColor: "{colors.ink-soft}"
     typography: "{typography.label}"
     rounded: "{rounded.pill}"
     padding: "8px 12px"
@@ -348,9 +350,12 @@ bottom so the last slip is never flush against the screen edge. Vertical rhythm
 is one scale: 6, 8, 10, 12, 14, 16, 18, 20, 22, 26, with 18–22px reserved for
 the gap that opens a new band of content.
 
-Vertical order on the shelf is the order of use: question, composer, the last
-seven days, then the shelf itself (add field, search, sort, boards). The primary
-action — logging a moment — is above the fold and never behind navigation. On
+Vertical order on the shelf is the order of use: question, composer, transient
+notes (the first-marble payoff, the undo queue), then the shelf boards
+themselves, then a footer home for reflection and tools — the week's ribbon
+opening at three slips behind a "Show the week" expander, then the add field,
+search, and sort. The primary action — logging a moment — is above the fold
+and never behind navigation. On
 the jar screen the order is: name and count, the vessel, chapters, the week
 chart and tag split, the log composer, then the history feed, then the sign-off.
 
@@ -431,8 +436,11 @@ no gradient fills anywhere in the product.
   failure — no red outline, no warning icon, no disabled state.
 - **Destructive (cherry deep):** the second step of "Remove" on a shelf board,
   inside a confirm box that first states exactly what goes with the person.
-- **Quiet:** "Rename", "Remove", "Cancel", "Keep", "Add the why", "Show more" —
-  `ink-faint`, Karla 600, no fill, no border, `hitSlop` 6–12px.
+- **Quiet:** "Rename", "Remove", "Cancel", "Keep", "Add the why", "Show more",
+  "Show the week" / "Show less" —
+  `ink-faint`, Karla 600, no fill, no border, `hitSlop` 6–12px. The undo
+  action in the removal queue is the same shape in `ink`, so the way back
+  reads one step louder than its neighbors.
 - **Pressed:** opacity 0.75 everywhere (0.8 on tag fields). No scale, no color
   shift, no ripple.
 
@@ -444,12 +452,13 @@ no gradient fills anywhere in the product.
   jar picker is the one exception: its selected state fills cherry, because
   choosing a jar is a live action.
 - **Tag fields (both composers):** the one tag pattern, used identically on the
-  shelf and the jar screen. Each BRAVING pill is 99px, flooded with its own hue
-  at rest with `paper-ink` label and gloss and a `rgba(43,30,17,0.55)` pin; the
-  chosen pill goes to `board-raised` with `ink` label and the hue kept as a 2px
-  lit edge and a solid pin. Tap-to-clear back to untagged; the chosen tag's
-  gloss reads once below the row. Hue-as-fill at rest and hue-as-edge when
-  selected is one grammar — never border-only beads.
+  shelf and the jar screen. Each BRAVING pill is 99px, neutral at rest — board
+  fill, hairline edge, `ink-soft` label — with the hue carried only by the pin;
+  the chosen pill floods with its own hue (`paper-ink` label, solid dark pin,
+  hue edge). Tap-to-clear back to untagged; the chosen tag's gloss reads once
+  below the row, and a carried last-tag default is marked there ("Reliability ·
+  last time") so a stale default never logs silently. Fill + edge + label + pin
+  all change with state, so selection is never color-only.
 
 ### Cards / Containers
 
@@ -544,8 +553,9 @@ to a control after a tap. Press feedback is a single opacity step.
   darkened slip with struck-through words, and a `−1` in the meta line.
 - **Do** reserve cherry for the surface of a live action or a selected target,
   and pair add/remove as two equal halves of one row.
-- **Do** fill a tag row with its own hue and keep the hue as the lit edge when
-  the row is selected.
+- **Do** keep tag pills neutral at rest with the hue on the pin only, flood the
+  chosen pill with its own hue, and mark a carried last-tag default in the
+  gloss line — never log a silent preselect.
 - **Do** write a real sentence for empty states — "The shelf is bare. Add
   someone above — the first marble is a small kept promise away."
 - **Do** keep the twenty-dot row and the count line as plain text; the jar's

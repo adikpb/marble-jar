@@ -113,14 +113,27 @@ export default function Home() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [confirmingRemoveId, setConfirmingRemoveId] = useState<string | null>(null);
-  const [pendingRemove, setPendingRemove] = useState<{ id: string; name: string } | null>(null);
-  const pendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Queued removals: every confirmed jar waits its own 5s window off the
+  // shelf before the store is touched, so Undo only ever cancels — nothing
+  // is deleted-then-restored, and a second confirm queues alongside the
+  // first instead of flushing it. Unmount abandons the wait, not the jar.
+  const [pendingRemoves, setPendingRemoves] = useState<
+    { id: string; name: string; secsLeft: number }[]
+  >([]);
+  const pendingTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const [cardError, setCardError] = useState<{ id: string; message: string } | null>(null);
   // Quick-log composer state
   const [logPersonId, setLogPersonId] = useState<string | null>(null);
   const [logReason, setLogReason] = useState("");
   const [logTag, setLogTag] = useState(() => readLastTag());
+  // Whether the current composer tag arrived carried from seen:last-tag
+  // rather than from a tap. True only until the first tap or log clears it,
+  // so the gloss line can mark the carried default explicitly.
+  const [logCarried, setLogCarried] = useState(() => readLastTag() !== "");
   const [logHint, setLogHint] = useState<string | null>(null);
+  // Week ribbon expander: collapsed to three slips until asked. Session
+  // state only — the ribbon opens collapsed on every visit.
+  const [weekExpanded, setWeekExpanded] = useState(false);
   // A failed first load is the only shelf-level error: the boards below
   // are per-card, so this line owns "nothing loaded at all" + the retry.
   const [loadError, setLoadError] = useState(false);
@@ -163,8 +176,15 @@ export default function Home() {
         setHasMarble(rows.some((r) => r.count > 0));
       }
       setOpenedJar(readSeen("seen:checklist-opened"));
-      if (!logPersonId || !rows.some((r) => r.id === logPersonId)) {
-        setLogPersonId(rows[0]?.id ?? null);
+      // Single-jar fast path only: exactly one jar is unambiguous, so it
+      // stays preselected. With zero or many jars there is no silent
+      // default — the composer keeps no target until a jar is tapped, and
+      // logging without one raises the "A marble needs its jar" hint.
+      if (rows.length === 1) {
+        const only = rows[0];
+        if (only && logPersonId !== only.id) setLogPersonId(only.id);
+      } else if (!logPersonId || !rows.some((r) => r.id === logPersonId)) {
+        setLogPersonId(null);
       }
       // The week's ribbon + the hue of every shelf: newest marbles per jar.
       const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -212,10 +232,25 @@ export default function Home() {
   // Abandoning the shelf (unmount) abandons the deletion, not the jar.
   useEffect(
     () => () => {
-      if (pendingTimer.current) clearTimeout(pendingTimer.current);
+      for (const t of pendingTimers.current.values()) clearTimeout(t);
+      pendingTimers.current.clear();
     },
     [],
   );
+
+  // One shared tick for every queued countdown: a plain state step once a
+  // second, no looped animation, so the time cue stays legible and still
+  // under reduced motion.
+  const hasPending = pendingRemoves.length > 0;
+  useEffect(() => {
+    if (!hasPending) return;
+    const iv = setInterval(() => {
+      setPendingRemoves((prev) =>
+        prev.map((p) => ({ ...p, secsLeft: Math.max(0, p.secsLeft - 1) })),
+      );
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [hasPending]);
 
   function dismissChecklist() {
     markSeen("seen:checklist");
@@ -246,13 +281,17 @@ export default function Home() {
     const usedTag = logTag;
     // Logging to a jar mid-removal keeps it: the moment would otherwise
     // land in the store seconds before the timer deletes jar and all.
-    if (pendingRemove && pendingRemove.id === logPersonId) cancelPendingRemove();
+    const queued = pendingRemoves.find((p) => p.id === logPersonId);
+    if (queued) cancelPendingRemove(queued.id);
     await addMarble(logPersonId, delta, logReason, usedTag);
     setLogReason("");
     // Soft default: keep the just-used tag selected and persist it, so the
-    // next moment starts where the last one left off. Tapping the active
-    // pill still clears to untagged, and empty submits still hit WHY_HINT.
+    // next moment starts where the last one left off. The kept tag is a
+    // fresh choice, not a carried default, so the mark clears. Tapping the
+    // active pill still clears to untagged, and empty submits still hit
+    // WHY_HINT.
     setLogTag(usedTag);
+    setLogCarried(false);
     writeLastTag(usedTag);
     setLogHint(null);
     // The one diegetic focal: the first drop settles, once per session.
@@ -288,46 +327,42 @@ export default function Home() {
     setCardError(null);
     await refresh();
   }
-  async function confirmRemove(row: Row) {
-    // A second confirm flushes the earlier one first: every intent to
-    // remove still lands, and only one quiet window is ever open.
-    if (pendingRemove && pendingRemove.id !== row.id) {
-      if (pendingTimer.current) clearTimeout(pendingTimer.current);
-      pendingTimer.current = null;
-      const prev = pendingRemove;
-      setPendingRemove(null);
-      try {
-        await removePerson(prev.id);
-      } catch {
-        setCardError({ id: prev.id, message: "Couldn't remove that jar. Please try again." });
-        await refresh();
-        return;
-      }
+  async function finalizeRemove(id: string) {
+    pendingTimers.current.delete(id);
+    setPendingRemoves((prev) => prev.filter((p) => p.id !== id));
+    try {
+      await removePerson(id);
+    } catch {
+      setCardError({
+        id,
+        message: "Couldn't remove that jar — it's still on the shelf. Please try again.",
+      });
       await refresh();
+      return;
     }
-    if (pendingTimer.current) clearTimeout(pendingTimer.current);
+    setCardError(null);
+    await refresh();
+  }
+  function confirmRemove(row: Row) {
+    // Queued, never flushed: a confirm that arrives while another waits
+    // simply waits its own turn — each jar keeps its own Undo.
+    if (pendingRemoves.some((p) => p.id === row.id)) {
+      setConfirmingRemoveId(null);
+      return;
+    }
     setConfirmingRemoveId(null);
     setCardError(null);
-    setPendingRemove({ id: row.id, name: row.name });
-    pendingTimer.current = setTimeout(async () => {
-      pendingTimer.current = null;
-      try {
-        await removePerson(row.id);
-      } catch {
-        setPendingRemove(null);
-        setCardError({ id: row.id, message: "Couldn't remove that jar. Please try again." });
-        await refresh();
-        return;
-      }
-      setPendingRemove(null);
-      setCardError(null);
-      await refresh();
+    setPendingRemoves((prev) => [...prev, { id: row.id, name: row.name, secsLeft: 5 }]);
+    const t = setTimeout(() => {
+      void finalizeRemove(row.id);
     }, 5000);
+    pendingTimers.current.set(row.id, t);
   }
-  function cancelPendingRemove() {
-    if (pendingTimer.current) clearTimeout(pendingTimer.current);
-    pendingTimer.current = null;
-    setPendingRemove(null);
+  function cancelPendingRemove(id: string) {
+    const t = pendingTimers.current.get(id);
+    if (t) clearTimeout(t);
+    pendingTimers.current.delete(id);
+    setPendingRemoves((prev) => prev.filter((p) => p.id !== id));
   }
 
   const logPerson = useMemo(
@@ -335,21 +370,34 @@ export default function Home() {
     [people, logPersonId],
   );
   const q = query.trim();
-  // The pending removal hides its row without touching the store, so
-  // Undo restores instantly from state — no refresh, nothing lost.
-  const visiblePeople = pendingRemove ? people.filter((p) => p.id !== pendingRemove.id) : people;
+  // Queued removals hide their rows without touching the store, so Undo
+  // restores instantly from state — no refresh, nothing lost. The shelf
+  // never flips mid-window: hidden rows simply stay hidden until each
+  // window closes or is undone.
+  const pendingIds = useMemo(() => new Set(pendingRemoves.map((p) => p.id)), [pendingRemoves]);
+  const visiblePeople = hasPending ? people.filter((p) => !pendingIds.has(p.id)) : people;
   // A 0-jar user walks the add-person path first; everyone else keeps the
   // composer-first order of use. Gated on load so returning shelves don't flip.
   const isFirstRun = loaded && people.length === 0 && !q;
+  // Footer home exists whenever there is anything to put in it: the week
+  // ribbon, or the shelf tools on any shelf that already has jars.
+  const showFoot = fresh.length > 0 || !isFirstRun;
   const stepDone = [hasPerson, hasMarble, openedJar];
   const allStepsDone = stepDone.every(Boolean);
   const showChecklist = loaded && !listDismissed;
+  // Single tip slot: the checklist above is onboarding, never a tip, so it
+  // always stands. Below it only one voice speaks at a time — the
+  // first-marble payoff first, the quiet-week nudge only when the payoff
+  // is gone. (The BRAVING guide inside the composer is mutually exclusive
+  // by construction: it needs no marble yet, the quiet line needs marbles.)
   // Second visit, quiet week: one ghost line, no overlay, no coachmark.
-  const quietWeek = loaded && people.length > 0 && fresh.length === 0 && hasMarble;
+  const quietWeek = loaded && people.length > 0 && fresh.length === 0 && hasMarble && !firstNote;
 
-  function renderAddRow() {
+  // `flush` drops the band gap for the footer home, where the foot wrapper
+  // already carries the separation from the last board.
+  function renderAddRow(flush = false) {
     return (
-      <View style={s.addRow}>
+      <View style={[s.addRow, flush && s.addFlush]}>
         <TextInput
           ref={addInputRef}
           testID="add-person-input"
@@ -462,8 +510,8 @@ export default function Home() {
                   <Text style={s.confirmText}>
                     Lift {item.name} off the shelf?{" "}
                     {item.count > 0
-                      ? `Their ${item.count} ${item.count === 1 ? "marble" : "marbles"} — every reason and tag — go with them. This can't be undone.`
-                      : "Their jar is empty, but they leave the shelf for good."}
+                      ? `Their ${item.count} ${item.count === 1 ? "marble" : "marbles"} — every reason and tag — go with them. They'll wait just off the shelf for a few moments in case you change your mind.`
+                      : "Their jar is empty. They'll wait just off the shelf for a few moments in case you change your mind."}
                   </Text>
                   <View style={s.boardActions}>
                     <Pressable
@@ -738,10 +786,12 @@ export default function Home() {
                 value={logTag}
                 onChange={(t) => {
                   setLogTag(t);
+                  setLogCarried(false);
                   setLogHint(null);
                 }}
                 glosses={TAG_GLOSSES}
                 idPrefix="quick-tag-"
+                carried={!!logTag && logCarried}
               />
               <View style={s.logRow}>
                 <Pressable
@@ -782,23 +832,6 @@ export default function Home() {
             </Animated.View>
           )}
 
-          {fresh.length > 0 && (
-            <View style={s.week}>
-              <Text style={s.weekTitle}>This week on the shelf</Text>
-              {fresh.map(({ marble, name: who }) => (
-                <View key={marble.id} style={s.weekSlip}>
-                  <Slip
-                    reason={marble.reason}
-                    fallback={marble.delta > 0 ? "Marble added" : "Marble removed"}
-                    hue={tagHue(marble.bravingTag)}
-                    removed={marble.delta < 0}
-                    meta={`${who} · ${marble.bravingTag || "untagged"} · ${dayLabel(marble.ts)}`}
-                  />
-                </View>
-              ))}
-            </View>
-          )}
-
           {/* Second visit, quiet week: one ghost line pointing at the
               composer — the single dominant flow stays silent otherwise. */}
           {quietWeek && (
@@ -807,9 +840,10 @@ export default function Home() {
             </Text>
           )}
 
-          {/* Single home for the add row: above search in every state, so
-              the shelf cluster reads add → search → sort → boards. */}
-          {renderAddRow()}
+          {/* First run only: the add row keeps its pre-jar home above the
+              bare-shelf sentence, so the newcomer path never hunts. Every
+              other shelf meets add → search → sort after the jars. */}
+          {isFirstRun && renderAddRow()}
 
           {/* The payoff beat: a slower settle (the focal entrance) and a
               quick fade out, so opening the jar feels continuous. */}
@@ -857,82 +891,160 @@ export default function Home() {
             </Animated.View>
           )}
 
-          {/* No jars, no search: the bare shelf keeps add as its only call. */}
-          {!isFirstRun && (
-            <TextInput
-              testID="search-person-input"
-              nativeID="search-person-input"
-              accessibilityLabel="Search people by name"
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search jars…"
-              placeholderTextColor={Lamp.inkFaint}
-              style={[s.field, s.searchField]}
-              returnKeyType="search"
-              clearButtonMode="while-editing"
-            />
-          )}
-          {people.length > 0 || q ? (
-            <View style={s.sortRow}>
-              {SORTS.map((o) => {
-                const on = sort === o.key;
-                return (
-                  <Pressable
-                    key={o.key}
-                    testID={`sort-${o.key}`}
-                    nativeID={`sort-${o.key}`}
-                    accessibilityRole="button"
-                    accessibilityLabel={o.label}
-                    accessibilityState={{ selected: on }}
-                    onPress={() => setSort(o.key)}
-                    hitSlop={6}
-                    style={({ pressed }) => [s.sort, on && s.sortOn, pressed && s.pressed]}
-                  >
-                    <Text style={[s.sortText, on && s.sortTextOn]}>{o.short}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          ) : null}
+          {/* Shelf tools (search, sort) live in the footer home, after the
+              jars — the header ends on the transient rows above. */}
 
-          {/* Quiet undo: the jar is only hidden, never deleted, until the
-              window closes — Undo cancels so no delete ever happens. */}
-          {pendingRemove && (
+          {/* Quiet undo, one row per waiting jar: each jar is only hidden,
+              never deleted, until its own window closes — Undo cancels so
+              no delete ever happens. The countdown is a plain state step
+              (text + still bar), never a looped animation. */}
+          {hasPending && (
             <Animated.View
               entering={reduceMotion ? undefined : FadeInDown.duration(420).easing(settleEase)}
             >
-              <View
-                style={s.undoRow}
-                testID="remove-undo"
-                nativeID="remove-undo"
-                accessible
-                accessibilityRole="alert"
-                accessibilityLabel={`Removed ${pendingRemove.name}. Undo is available for a few moments.`}
-              >
-                <Text style={s.undoText} numberOfLines={1}>
-                  Removed {pendingRemove.name} —
-                </Text>
-                <Pressable
-                  testID="remove-undo-button"
-                  nativeID="remove-undo-button"
-                  accessibilityRole="button"
-                  accessibilityLabel={`Undo removing ${pendingRemove.name}`}
-                  onPress={cancelPendingRemove}
-                  hitSlop={8}
-                  style={({ pressed }) => [s.quietBtn, pressed && s.pressed]}
-                >
-                  <Text style={s.undoAction}>Undo</Text>
-                </Pressable>
+              <View style={s.undoList} testID="remove-undo" nativeID="remove-undo">
+                {pendingRemoves.map((p) => {
+                  const single = pendingRemoves.length === 1;
+                  const secs = Math.max(0, p.secsLeft);
+                  return (
+                    <View
+                      key={p.id}
+                      style={s.undoRow}
+                      testID={single ? undefined : `remove-undo-${p.id}`}
+                      nativeID={single ? undefined : `remove-undo-${p.id}`}
+                      accessible
+                      accessibilityRole="alert"
+                      accessibilityLabel={`${p.name} is leaving the shelf. Undo is available for ${secs} more seconds.`}
+                    >
+                      <View style={s.undoTop}>
+                        <Text style={s.undoText} numberOfLines={1}>
+                          Leaving the shelf — {p.name} ·{" "}
+                          <Text
+                            testID={
+                              single ? "remove-undo-countdown" : `remove-undo-countdown-${p.id}`
+                            }
+                            nativeID={
+                              single ? "remove-undo-countdown" : `remove-undo-countdown-${p.id}`
+                            }
+                            style={s.undoSecs}
+                          >
+                            Undo within {secs}s
+                          </Text>
+                        </Text>
+                        <Pressable
+                          testID={single ? "remove-undo-button" : `remove-undo-button-${p.id}`}
+                          nativeID={single ? "remove-undo-button" : `remove-undo-button-${p.id}`}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Undo removing ${p.name}`}
+                          onPress={() => cancelPendingRemove(p.id)}
+                          hitSlop={8}
+                          style={({ pressed }) => [s.quietBtn, pressed && s.pressed]}
+                        >
+                          <Text style={s.undoAction}>Undo</Text>
+                        </Pressable>
+                      </View>
+                      <View style={s.undoTrack}>
+                        <View style={[s.undoFill, { width: `${(secs / 5) * 100}%` }]} />
+                      </View>
+                    </View>
+                  );
+                })}
               </View>
             </Animated.View>
           )}
         </View>
       }
+      ListFooterComponent={
+        !showFoot ? null : (
+          <View style={s.foot}>
+            {/* Reflection after the object: the week's ribbon opens at three
+                slips, the rest behind "Show the week". */}
+            {fresh.length > 0 && (
+              <View style={[s.week, s.weekFoot]}>
+                <Text style={s.weekTitle}>This week on the shelf</Text>
+                {(weekExpanded ? fresh : fresh.slice(0, 3)).map(({ marble, name: who }) => (
+                  <View key={marble.id} style={s.weekSlip}>
+                    <Slip
+                      reason={marble.reason}
+                      fallback={marble.delta > 0 ? "Marble added" : "Marble removed"}
+                      hue={tagHue(marble.bravingTag)}
+                      removed={marble.delta < 0}
+                      meta={`${who} · ${marble.bravingTag || "untagged"} · ${dayLabel(marble.ts)}`}
+                    />
+                  </View>
+                ))}
+                {fresh.length > 3 && (
+                  <Pressable
+                    testID="week-toggle"
+                    nativeID="week-toggle"
+                    accessibilityRole="button"
+                    accessibilityLabel={weekExpanded ? "Show less" : "Show the week"}
+                    accessibilityState={{ expanded: weekExpanded }}
+                    onPress={() => setWeekExpanded((v) => !v)}
+                    hitSlop={6}
+                    style={({ pressed }) => [s.weekToggle, pressed && s.pressed]}
+                  >
+                    <Text style={s.quietBtnText}>
+                      {weekExpanded ? "Show less" : "Show the week"}
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
+
+            {/* Shelf tools after the jars: add → search → sort. */}
+            {!isFirstRun && renderAddRow(fresh.length === 0)}
+
+            {/* Search stays hidden until the first jar lands. */}
+            {!isFirstRun && (
+              <TextInput
+                testID="search-person-input"
+                nativeID="search-person-input"
+                accessibilityLabel="Search people by name"
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search jars…"
+                placeholderTextColor={Lamp.inkFaint}
+                style={[s.field, s.searchField]}
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+              />
+            )}
+            {people.length > 0 || q ? (
+              <View style={s.sortRow}>
+                {SORTS.map((o) => {
+                  const on = sort === o.key;
+                  return (
+                    <Pressable
+                      key={o.key}
+                      testID={`sort-${o.key}`}
+                      nativeID={`sort-${o.key}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={o.label}
+                      accessibilityState={{ selected: on }}
+                      onPress={() => setSort(o.key)}
+                      hitSlop={6}
+                      style={({ pressed }) => [s.sort, on && s.sortOn, pressed && s.pressed]}
+                    >
+                      <Text style={[s.sortText, on && s.sortTextOn]}>{o.short}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+          </View>
+        )
+      }
       ListEmptyComponent={
-        // Before the first load lands, nothing — the bare-shelf sentence
-        // must never flash over jars that are still arriving. A failed
-        // load reads as failed, with the retry right where empty would be.
-        !loaded ? null : loadError && visiblePeople.length === 0 ? (
+        // Before the first load lands, one quiet line — never the
+        // bare-shelf sentence, which must not flash over jars that are still
+        // arriving. A failed load reads as failed, with the retry right
+        // where empty would be.
+        !loaded ? (
+          <Text testID="loading-line" nativeID="loading-line" style={s.empty}>
+            Loading…
+          </Text>
+        ) : loadError && visiblePeople.length === 0 ? (
           <View style={s.loadFail}>
             <Text
               testID="load-error"
@@ -1073,19 +1185,25 @@ const s = StyleSheet.create({
     marginTop: 14,
     textAlign: "center",
   },
+  undoList: { gap: 8, marginTop: 10 },
   undoRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-    marginTop: 10,
     backgroundColor: Lamp.board,
     borderWidth: 1,
     borderColor: Lamp.hairline,
     borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingVertical: 8,
   },
+  undoTop: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4 },
+  undoTrack: {
+    height: 2,
+    borderRadius: 99,
+    backgroundColor: Lamp.empty,
+    marginTop: 8,
+    overflow: "hidden",
+  },
+  undoFill: { height: 2, borderRadius: 99, backgroundColor: Lamp.inkFaint },
+  undoSecs: { fontFamily: Font.bodySemi, fontWeight: "600", color: Lamp.inkSoft },
   undoText: {
     fontFamily: Font.body,
     fontSize: 13.5,
@@ -1172,7 +1290,13 @@ const s = StyleSheet.create({
   week: { marginTop: 22 },
   weekTitle: { fontFamily: Font.display, fontSize: 22, color: Lamp.ink, marginBottom: 10 },
   weekSlip: { marginBottom: 10 },
+  weekToggle: { alignSelf: "flex-start", marginTop: 2, paddingVertical: 8, paddingHorizontal: 6 },
+  // Footer home: one band gap below the last board, then flush first
+  // children — the inner bands keep their own rhythm from there.
+  foot: { marginTop: 8 },
+  weekFoot: { marginTop: 0 },
   addRow: { flexDirection: "row", gap: 10, marginTop: 22, alignItems: "center" },
+  addFlush: { marginTop: 0 },
   addField: { flex: 1, marginTop: 0 },
   addBtn: { paddingHorizontal: 22, paddingVertical: 14 },
   solidBtn: {

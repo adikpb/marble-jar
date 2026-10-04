@@ -138,6 +138,10 @@ export default function PersonScreen() {
   const [pct, setPct] = useState(0);
   const [reason, setReason] = useState("");
   const [tag, setTag] = useState<string>(() => readLastTag());
+  // Whether the jar composer tag arrived carried from seen:last-tag rather
+  // than from a tap. Clears on the first tap or log so the gloss mark can't
+  // linger on a fresh choice.
+  const [tagCarried, setTagCarried] = useState(() => readLastTag() !== "");
   const [formHint, setFormHint] = useState<string | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [live, setLive] = useState<Chapter | null>(null);
@@ -149,6 +153,9 @@ export default function PersonScreen() {
   const [expandedWhy, setExpandedWhy] = useState<string | null>(null);
   const [whyReason, setWhyReason] = useState("");
   const [whyTag, setWhyTag] = useState("");
+  // The why-repair card speaks like the composers: an empty save raises the
+  // shared why line instead of returning silently.
+  const [whyHint, setWhyHint] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const [justLogged, setJustLogged] = useState<string | null>(null);
   // First fetch still in flight: empties stay quiet until the jar answers,
@@ -229,9 +236,12 @@ export default function PersonScreen() {
     const m = await addMarble(personId, delta, reason, usedTag);
     setReason("");
     // Soft default: keep the just-used tag selected and persist it, so the
-    // next moment starts where the last one left off. Tapping the active
-    // pill still clears to untagged, and empty submits still hit WHY_HINT.
+    // next moment starts where the last one left off. The kept tag is a
+    // fresh choice, not a carried default, so the mark clears. Tapping the
+    // active pill still clears to untagged, and empty submits still hit
+    // WHY_HINT.
     setTag(usedTag);
+    setTagCarried(false);
     writeLastTag(usedTag);
     setFormHint(null);
     setJustLogged(m.id);
@@ -264,15 +274,19 @@ export default function PersonScreen() {
     setExpandedWhy(m.id);
     setWhyReason("");
     setWhyTag(m.bravingTag.trim());
+    setWhyHint(null);
   }
 
   async function saveWhy(m: Marble) {
-    if (!m.reason.trim() && !whyReason.trim()) return;
-    if (!m.bravingTag.trim() && !whyTag) return;
+    if ((!m.reason.trim() && !whyReason.trim()) || (!m.bravingTag.trim() && !whyTag)) {
+      setWhyHint(WHY_HINT);
+      return;
+    }
     await completeMarble(m.id, whyReason, whyTag);
     setExpandedWhy(null);
     setWhyReason("");
     setWhyTag("");
+    setWhyHint(null);
     setRevision((r) => r + 1);
   }
 
@@ -296,6 +310,14 @@ export default function PersonScreen() {
   const hasTaggedMarble =
     marbles.some((m) => m.bravingTag.trim().length > 0) ||
     breakdown.some((r) => r.added + r.removed > 0);
+  // Single tip slot, in priority order: the first-marble moment (the
+  // pre-log jar tip, then the post-log first-in payoff) speaks before the
+  // answer reassurance, and the reassurance retires once the tag split has
+  // data to show for itself. Each line stands alone; together only one
+  // shows. Dismissal keys below are untouched.
+  const firstInActive = !!justLogged && marbles.length === 1;
+  const answerEligible = marbles.length > 0 && !answerDismissed && splitRows.length === 0;
+  const showAnswer = answerEligible && !firstInActive;
 
   const groups: { weekStart: number; items: Marble[] }[] = [];
   for (const m of marbles) {
@@ -316,7 +338,7 @@ export default function PersonScreen() {
         keyboardShouldPersistTaps="handled"
       >
         {Platform.OS === "web" && <JarWebHeader onBack={goBack} />}
-        <Text style={s.name} accessibilityRole="header">
+        <Text testID="loading-line" nativeID="loading-line" style={s.muted}>
           Loading…
         </Text>
       </ScrollView>
@@ -377,7 +399,7 @@ export default function PersonScreen() {
       />
       {Platform.OS === "web" && <JarWebHeader onBack={goBack} />}
       <Text style={s.name} accessibilityRole="header">
-        {person?.name ?? "Loading…"}
+        {person.name}
       </Text>
       <Text
         testID="jar-count"
@@ -556,7 +578,7 @@ export default function PersonScreen() {
         )}
       </View>
 
-      {marbles.length > 0 && !answerDismissed && (
+      {showAnswer && (
         <Animated.View entering={reduceMotion ? undefined : FadeInDown.duration(400)}>
           <View style={s.answerTip} accessible accessibilityLabel="How to read this jar">
             <Text style={s.answerText}>
@@ -625,10 +647,12 @@ export default function PersonScreen() {
             value={tag}
             onChange={(t) => {
               setTag(t);
+              setTagCarried(false);
               setFormHint(null);
             }}
             glosses={TAG_GLOSSES}
             idPrefix="braving-"
+            carried={!!tag && tagCarried}
           />
           <View style={s.btnRow}>
             <Pressable
@@ -662,8 +686,9 @@ export default function PersonScreen() {
 
       <Text style={s.section}>Moments, by week</Text>
       {/* The settle after the marble lands: slower than the tip, still
-          arrival-only, with a quick fade when dismissed. */}
-      {justLogged && marbles.length === 1 && (
+          arrival-only, with a quick fade when dismissed. Speaks before the
+          answer reassurance in the single tip slot. */}
+      {firstInActive && (
         <Animated.View
           entering={reduceMotion ? undefined : FadeInDown.duration(600).easing(settleEase)}
           exiting={reduceMotion ? undefined : FadeOut.duration(180)}
@@ -736,7 +761,10 @@ export default function PersonScreen() {
                                 accessibilityLabel="Missing reason"
                                 accessibilityHint="What happened in this moment?"
                                 value={whyReason}
-                                onChangeText={setWhyReason}
+                                onChangeText={(t) => {
+                                  setWhyReason(t);
+                                  setWhyHint(null);
+                                }}
                                 placeholder="What happened?"
                                 placeholderTextColor={Lamp.inkFaint}
                                 style={s.field}
@@ -747,7 +775,10 @@ export default function PersonScreen() {
                                 <Text style={s.fieldLabel}>BRAVING tag</Text>
                                 <TagField
                                   value={whyTag}
-                                  onChange={setWhyTag}
+                                  onChange={(t) => {
+                                    setWhyTag(t);
+                                    setWhyHint(null);
+                                  }}
                                   glosses={TAG_GLOSSES}
                                   idPrefix="why-tag-"
                                 />
@@ -783,6 +814,16 @@ export default function PersonScreen() {
                                 <Text style={s.btnSolidTextSmall}>Save</Text>
                               </Pressable>
                             </View>
+                            {!!whyHint && (
+                              <Text
+                                testID="why-hint"
+                                nativeID="why-hint"
+                                style={s.hint}
+                                accessibilityRole="alert"
+                              >
+                                {whyHint}
+                              </Text>
+                            )}
                           </View>
                         ) : (
                           <Pressable

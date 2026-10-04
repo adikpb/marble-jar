@@ -61,24 +61,32 @@ export function MarbleDots({
   );
 }
 
-// Compact hue pills for choosing a BRAVING tag: each tag floods its own
-// pill with its color at rest, and the chosen one goes dark with the hue
-// kept as a lit edge. Same glass language as the full-bleed rows, wrapped
+// Compact hue pills for choosing a BRAVING tag: neutral at rest (board
+// fill, ink-soft label, hairline edge) with the hue carried ONLY by the
+// pin, and flooded with the tag hue when chosen (paper-ink label, solid
+// dark pin, hue edge). Same glass language as the full-bleed rows, wrapped
 // tight so the composer stays a composer. Tapping the chosen pill clears
-// back to untagged. The chosen tag's gloss reads once below the row.
+// back to untagged. The chosen tag's gloss reads once below the row; a
+// carried last-tag default is marked there ("Reliability · last time") so a
+// stale default never logs silently. Fill + edge + label + pin all change
+// with state, so meaning is never color-only.
 export function TagField({
   value,
   onChange,
   glosses,
   idPrefix,
+  carried = false,
 }: {
   value: string;
   onChange: (t: string) => void;
   glosses: Record<string, string>;
   idPrefix: string;
+  carried?: boolean;
 }) {
   const tags = Object.keys(glosses);
   const activeGloss = value ? (glosses[value] ?? "") : "";
+  const showCarried = carried && !!value && !!activeGloss;
+  const glossLine = showCarried ? `${value} · last time — ${activeGloss}` : activeGloss;
   return (
     <View>
       <View style={tf.list}>
@@ -86,6 +94,7 @@ export function TagField({
           const active = value === t;
           const hue = tagHue(t);
           const gloss = glosses[t] ?? "";
+          const isCarried = active && carried;
           return (
             <Pressable
               key={t}
@@ -93,28 +102,38 @@ export function TagField({
               nativeID={`${idPrefix}${t}`}
               accessibilityRole="button"
               accessibilityState={{ selected: active }}
-              accessibilityLabel={gloss ? `${t}. ${gloss}` : t}
+              accessibilityLabel={
+                gloss
+                  ? `${t}. ${gloss}${isCarried ? ", carried from last time" : ""}${active ? ", selected" : ""}`
+                  : `${t}${isCarried ? ", carried from last time" : ""}${active ? ", selected" : ""}`
+              }
               onPress={() => onChange(active ? "" : t)}
               hitSlop={6}
               style={({ pressed }) => [
                 tf.field,
-                { backgroundColor: active ? Lamp.boardRaised : hue },
-                active && { borderColor: hue },
+                active
+                  ? { backgroundColor: hue, borderColor: hue }
+                  : { backgroundColor: Lamp.board, borderColor: Lamp.hairline },
                 pressed && tf.pressed,
               ]}
             >
               <Text
-                style={[tf.name, active ? { color: Lamp.ink } : { color: Lamp.paperInk }]}
+                style={[tf.name, active ? { color: Lamp.paperInk } : { color: Lamp.inkSoft }]}
                 numberOfLines={1}
               >
                 {t}
               </Text>
-              <View style={[tf.pin, { backgroundColor: active ? hue : "rgba(43,30,17,0.55)" }]} />
+              <View
+                style={[
+                  tf.pin,
+                  active ? { backgroundColor: Lamp.paperInk } : { backgroundColor: hue },
+                ]}
+              />
             </Pressable>
           );
         })}
       </View>
-      {!!activeGloss && <Text style={tf.glossLine}>{activeGloss}</Text>}
+      {!!activeGloss && <Text style={tf.glossLine}>{glossLine}</Text>}
     </View>
   );
 }
