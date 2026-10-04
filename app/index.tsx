@@ -1144,7 +1144,7 @@ export default function Home() {
               style={s.toolsTop}
             >
               {renderSearchField(true)}
-              {(people.length > 0 || q) && renderSortRow(true)}
+              {(people.length > 0 || q !== "") && renderSortRow(true)}
             </Animated.View>
           )}
         </View>
@@ -1195,7 +1195,7 @@ export default function Home() {
 
             {/* Search stays hidden until the first jar lands. */}
             {!isFirstRun && renderSearchField(false)}
-            {(people.length > 0 || q) && renderSortRow(false)}
+            {(people.length > 0 || q !== "") && renderSortRow(false)}
           </View>
         )
       }
