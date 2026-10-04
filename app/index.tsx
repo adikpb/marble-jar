@@ -134,6 +134,14 @@ export default function Home() {
   // Week ribbon expander: collapsed to three slips until asked. Session
   // state only — the ribbon opens collapsed on every visit.
   const [weekExpanded, setWeekExpanded] = useState(false);
+  // Full composer expander: on shelves with jars the header caps at a
+  // compact "Log a moment" row and the working composer lives just below
+  // the first board, so the object precedes its tools. Session state only.
+  const [composerExpanded, setComposerExpanded] = useState(false);
+  // Seven-meanings expander: the BRAVING guide retires after one marble, so
+  // this quiet line keeps all seven glosses one tap away on every shelf.
+  // Collapsed by default; plain conditional render, no motion.
+  const [meaningsOpen, setMeaningsOpen] = useState(false);
   // A failed first load is the only shelf-level error: the boards below
   // are per-card, so this line owns "nothing loaded at all" + the retry.
   const [loadError, setLoadError] = useState(false);
@@ -142,6 +150,9 @@ export default function Home() {
   const [loaded, setLoaded] = useState(false);
   const [hasPerson, setHasPerson] = useState(false);
   const [hasMarble, setHasMarble] = useState(false);
+  // Unfiltered shelf size, refreshed alongside the checklist ticks (never
+  // while searching), so the 4+ tool-row threshold can't flicker mid-filter.
+  const [shelfSize, setShelfSize] = useState(0);
   const [openedJar, setOpenedJar] = useState(false);
   const [listDismissed, setListDismissed] = useState(() => readSeen("seen:checklist"));
   // First-marble note is session-only on purpose: the settle is the reward,
@@ -150,6 +161,11 @@ export default function Home() {
   const firstNoteShown = useRef(false);
   const addInputRef = useRef<TextInput>(null);
   const reasonInputRef = useRef<TextInput>(null);
+  // Search homes for the picker overflow: the quiet tool row above the
+  // boards on 4+ shelves, the footer home everywhere else. The overflow
+  // focuses whichever home is showing.
+  const searchTopRef = useRef<TextInput>(null);
+  const searchBottomRef = useRef<TextInput>(null);
   // Reduced motion removes the slide but keeps fades and state changes.
   const reduceMotion = useReducedMotion();
 
@@ -174,6 +190,7 @@ export default function Home() {
       if (!q) {
         setHasPerson(rows.length > 0);
         setHasMarble(rows.some((r) => r.count > 0));
+        setShelfSize(rows.length);
       }
       setOpenedJar(readSeen("seen:checklist-opened"));
       // Single-jar fast path only: exactly one jar is unambiguous, so it
@@ -392,6 +409,19 @@ export default function Home() {
   // by construction: it needs no marble yet, the quiet line needs marbles.)
   // Second visit, quiet week: one ghost line, no overlay, no coachmark.
   const quietWeek = loaded && people.length > 0 && fresh.length === 0 && hasMarble && !firstNote;
+  // The working composer lives below the first board on returning shelves —
+  // beside the payoff note when one just landed, so the eye never leaves
+  // the spot where the marble was logged.
+  const showComposerBlock = !isFirstRun && (composerExpanded || !!firstNote);
+  // Header-adjacent fast path: once the shelf holds 4+ jars the search +
+  // sorts also sit above the boards, where large shelves can reach them.
+  // Below the threshold the footer home stays the only home. Both homes
+  // read and write the same query/sort state — one shelf, never two.
+  const showTopTools = loaded && !isFirstRun && shelfSize >= 4;
+
+  // The open-the-jar step links the top visible board — never a jar that
+  // is waiting just off the shelf in its Undo window.
+  const openStep = visiblePeople[0] ?? people[0];
 
   // `flush` drops the band gap for the footer home, where the foot wrapper
   // already carries the separation from the last board.
@@ -424,6 +454,280 @@ export default function Home() {
           <Text style={s.solidBtnText}>Add</Text>
         </Pressable>
       </View>
+    );
+  }
+
+  // Shelf tools, one state behind two homes: the footer home below the
+  // jars and, on 4+ shelves, the quiet tool row above the boards. Same
+  // query, same sort, same labels in both places — `top` only changes the
+  // testID suffix and the tighter cluster, never the meaning. The search
+  // keeps the shelf's own noun ("jars") in both the visible placeholder
+  // and the screen-reader name, so the two never disagree.
+  function renderSearchField(top = false) {
+    return (
+      <TextInput
+        ref={top ? searchTopRef : searchBottomRef}
+        testID={top ? "search-person-input-top" : "search-person-input"}
+        nativeID={top ? "search-person-input-top" : "search-person-input"}
+        accessibilityLabel="Search jars by name"
+        accessibilityHint="Filters the shelf as you type"
+        value={query}
+        onChangeText={setQuery}
+        placeholder="Search jars…"
+        placeholderTextColor={Lamp.inkFaint}
+        style={[s.field, top ? s.searchFieldTop : s.searchField]}
+        returnKeyType="search"
+        clearButtonMode="while-editing"
+      />
+    );
+  }
+
+  function renderSortRow(top = false) {
+    return (
+      <View style={top ? [s.sortRow, s.sortRowTop] : s.sortRow}>
+        {SORTS.map((o) => {
+          const on = sort === o.key;
+          return (
+            <Pressable
+              key={o.key}
+              testID={top ? `sort-${o.key}-top` : `sort-${o.key}`}
+              nativeID={top ? `sort-${o.key}-top` : `sort-${o.key}`}
+              accessibilityRole="button"
+              accessibilityLabel={o.label}
+              accessibilityState={{ selected: on }}
+              onPress={() => setSort(o.key)}
+              hitSlop={6}
+              style={({ pressed }) => [s.sort, on && s.sortOn, pressed && s.pressed]}
+            >
+              <Text style={[s.sortText, on && s.sortTextOn]}>{o.short}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    );
+  }
+
+  // The working composer: picker + reason + BRAVING tag + kept/broke.
+  // Lives below the first board on returning shelves (see showComposerBlock)
+  // and stays out of the header entirely, so the boards lead. All testIDs,
+  // tag-scent, carried-mark, and validation behavior unchanged.
+  function renderFullComposer() {
+    // Capped picker: the first four jars in shelf order plus the chosen
+    // target when it sits outside the four, so the target never vanishes
+    // under the cap. Everything else lives one tap away in search — the
+    // overflow focuses whichever search home is showing.
+    const recentPicks = people.slice(0, 4);
+    const chosenOutside =
+      logPersonId && !recentPicks.some((p) => p.id === logPersonId)
+        ? (people.find((p) => p.id === logPersonId) ?? null)
+        : null;
+    const shownPicks = chosenOutside ? [...recentPicks, chosenOutside] : recentPicks;
+    return (
+      <Animated.View
+        key="composer-live"
+        entering={reduceMotion ? undefined : FadeInDown.duration(420).easing(settleEase)}
+        style={[s.composer, s.composerBlock]}
+      >
+        <Text style={s.composerTitle}>Log a moment</Text>
+        {people.length > 0 ? (
+          <View style={s.pickerRow}>
+            {shownPicks.map((p) => {
+              const on = p.id === logPersonId;
+              return (
+                <Pressable
+                  key={p.id}
+                  testID={`quick-pick-${p.id}`}
+                  nativeID={`quick-pick-${p.id}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={`Log for ${p.name}`}
+                  onPress={() => {
+                    setLogPersonId(p.id);
+                    setLogHint(null);
+                  }}
+                  style={({ pressed }) => [s.pick, on && s.pickOn, pressed && s.pressed]}
+                >
+                  <Text style={[s.pickText, on && s.pickTextOn]} numberOfLines={1}>
+                    {p.name}
+                  </Text>
+                </Pressable>
+              );
+            })}
+            {people.length > shownPicks.length && (
+              <Pressable
+                testID="quick-pick-overflow"
+                nativeID="quick-pick-overflow"
+                accessibilityRole="button"
+                accessibilityLabel={`All ${people.length} jars — focus search to find a jar`}
+                accessibilityHint="Focuses the jar search"
+                onPress={() => {
+                  if (showTopTools) searchTopRef.current?.focus();
+                  else searchBottomRef.current?.focus();
+                }}
+                hitSlop={6}
+                style={({ pressed }) => [s.quietBtn, pressed && s.pressed]}
+              >
+                <Text style={s.quietBtnText}>All jars…</Text>
+              </Pressable>
+            )}
+          </View>
+        ) : null}
+        <TextInput
+          ref={reasonInputRef}
+          testID="quick-reason"
+          nativeID="quick-reason"
+          accessibilityLabel="What happened?"
+          accessibilityHint="A few words about the moment"
+          value={logReason}
+          onChangeText={(t) => {
+            setLogReason(t);
+            setLogHint(null);
+          }}
+          placeholder={logPerson ? `What happened with ${logPerson.name}?` : "What happened?"}
+          placeholderTextColor={Lamp.inkFaint}
+          style={s.field}
+          returnKeyType="done"
+        />
+        <Text style={s.fieldLabel}>BRAVING tag</Text>
+        {!logTag && !hasMarble && <Text style={s.guideLine}>{BRAVING_GUIDE}</Text>}
+        <TagField
+          value={logTag}
+          onChange={(t) => {
+            setLogTag(t);
+            setLogCarried(false);
+            setLogHint(null);
+          }}
+          glosses={TAG_GLOSSES}
+          idPrefix="quick-tag-"
+          carried={!!logTag && logCarried}
+        />
+        {/* The guide above retires after the first marble; this quiet line
+            keeps all seven meanings one tap away, collapsed until asked. It
+            teaches at the point of use — never selects, never validates. */}
+        <Pressable
+          testID="quick-meanings-toggle"
+          nativeID="quick-meanings-toggle"
+          accessibilityRole="button"
+          accessibilityLabel={meaningsOpen ? "Hide what the seven mean" : "What do the seven mean?"}
+          accessibilityState={{ expanded: meaningsOpen }}
+          aria-expanded={meaningsOpen}
+          onPress={() => setMeaningsOpen((v) => !v)}
+          hitSlop={6}
+          style={({ pressed }) => [s.meaningsToggle, pressed && s.pressed]}
+        >
+          <Text style={s.meaningsToggleText}>
+            {meaningsOpen ? "Hide the seven meanings" : "What do the seven mean?"}
+          </Text>
+        </Pressable>
+        {meaningsOpen && (
+          <View
+            testID="quick-meanings"
+            nativeID="quick-meanings"
+            accessible
+            accessibilityLabel="The seven BRAVING meanings"
+          >
+            {Object.entries(TAG_GLOSSES).map(([t, gloss]) => (
+              <Text key={t} style={s.meaningsLine}>
+                <Text style={s.meaningsName}>{t}</Text>
+                <Text style={s.meaningsGloss}> — {gloss}</Text>
+              </Text>
+            ))}
+          </View>
+        )}
+        <View style={s.logRow}>
+          <Pressable
+            testID="quick-remove"
+            nativeID="quick-remove"
+            accessibilityRole="button"
+            accessibilityLabel="Log a broken promise"
+            onPress={() => handleQuickLog(-1)}
+            style={({ pressed }) => [s.removeBtn, pressed && s.pressed]}
+          >
+            <Text style={s.removeBtnText}>− Broke one</Text>
+          </Pressable>
+          <Pressable
+            testID="quick-add"
+            nativeID="quick-add"
+            accessibilityRole="button"
+            accessibilityLabel="Log a kept promise"
+            onPress={() => handleQuickLog(1)}
+            style={({ pressed }) => [s.keptBtn, pressed && s.pressed]}
+          >
+            <Text style={s.keptBtnText}>+ Kept one</Text>
+          </Pressable>
+        </View>
+        {/* Validation arrives as a plain fade: opacity-only feedback,
+            so it stays even with reduced motion. */}
+        {!!logHint && (
+          <Animated.View entering={FadeIn.duration(150)}>
+            <Text
+              testID="quick-hint"
+              nativeID="quick-hint"
+              style={s.hint}
+              accessibilityRole="alert"
+            >
+              {logHint}
+            </Text>
+          </Animated.View>
+        )}
+        {/* Quiet week sits directly under the working composer, so the
+            "composer above" it names is the card just above this line. */}
+        {quietWeek && (
+          <Text style={s.quietLine} accessible accessibilityLabel="Quiet this week">
+            Quiet this week — the composer above is the way back in.
+          </Text>
+        )}
+      </Animated.View>
+    );
+  }
+
+  // The payoff beat: a slower settle (the focal entrance) and a quick fade
+  // out, so opening the jar feels continuous. Renders beside the working
+  // composer below the first board — where the eye already is after logging.
+  function renderFirstNote() {
+    if (!firstNote) return null;
+    return (
+      <Animated.View
+        entering={reduceMotion ? undefined : FadeInDown.duration(600).easing(settleEase)}
+        exiting={reduceMotion ? undefined : FadeOut.duration(180)}
+      >
+        <View
+          style={s.firstNote}
+          accessible
+          accessibilityLabel={`First marble in ${firstNote.name}'s jar`}
+        >
+          <Text style={s.firstNoteText}>
+            First marble in {firstNote.name}’s jar — open it to see the dots answer how you’re
+            doing.
+          </Text>
+          <View style={s.firstNoteRow}>
+            <Link href={{ pathname: "/person/[id]", params: { id: firstNote.id } }} asChild>
+              <Pressable
+                testID="first-note-open"
+                nativeID="first-note-open"
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${firstNote.name}'s jar`}
+                onPress={() => setFirstNote(null)}
+                hitSlop={8}
+                style={({ pressed }) => [s.noteOpen, pressed && s.pressed]}
+              >
+                <Text style={s.noteOpenText}>Open the jar</Text>
+              </Pressable>
+            </Link>
+            <Pressable
+              testID="first-note-dismiss"
+              nativeID="first-note-dismiss"
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss"
+              onPress={() => setFirstNote(null)}
+              hitSlop={8}
+              style={({ pressed }) => [s.quietBtn, pressed && s.pressed]}
+            >
+              <Text style={s.quietBtnText}>Dismiss</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Animated.View>
     );
   }
 
@@ -663,7 +967,12 @@ export default function Home() {
                         ? "Log a moment with its why, done"
                         : "Log a moment with its why. Focus the composer"
                     }
-                    onPress={() => reasonInputRef.current?.focus()}
+                    onPress={() => {
+                      // The working composer may sit collapsed below the first
+                      // board: open it first, then land focus in the reason.
+                      if (!isFirstRun && !composerExpanded) setComposerExpanded(true);
+                      setTimeout(() => reasonInputRef.current?.focus(), 60);
+                    }}
                     hitSlop={6}
                     style={({ pressed }) => [s.checkRow, pressed && s.pressed]}
                   >
@@ -672,8 +981,8 @@ export default function Home() {
                       Log a moment with its why
                     </Text>
                   </Pressable>
-                  {people.length > 0 && people[0] ? (
-                    <Link href={{ pathname: "/person/[id]", params: { id: people[0].id } }} asChild>
+                  {openStep ? (
+                    <Link href={{ pathname: "/person/[id]", params: { id: openStep.id } }} asChild>
                       <Pressable
                         testID="checklist-step-open"
                         nativeID="checklist-step-open"
@@ -681,7 +990,7 @@ export default function Home() {
                         accessibilityLabel={
                           openedJar
                             ? "Open the jar and sit with it, done"
-                            : `Open the jar and sit with it. Open ${people[0].name}'s jar`
+                            : `Open the jar and sit with it. Open ${openStep.name}'s jar`
                         }
                         hitSlop={6}
                         style={({ pressed }) => [s.checkRow, pressed && s.pressed]}
@@ -716,8 +1025,9 @@ export default function Home() {
           {/* First run: the composer rests as a two-line preview — title
               plus one line. The add row keeps its single home above search;
               nothing here takes input, so the happy path can never fail
-              with "add someone first". Once a jar lands it opens with the
-              settle ease. */}
+              with "add someone first". Once a jar lands the preview yields
+              to the compact row, and the working composer settles open
+              below the first board. */}
           {isFirstRun ? (
             <View
               style={s.composer}
@@ -732,109 +1042,24 @@ export default function Home() {
               </Text>
             </View>
           ) : (
-            <Animated.View
-              key="composer-live"
-              entering={reduceMotion ? undefined : FadeInDown.duration(420).easing(settleEase)}
-              style={s.composer}
+            <Pressable
+              testID="composer-expand"
+              nativeID="composer-expand"
+              accessibilityRole="button"
+              accessibilityLabel={composerExpanded ? "Hide the composer" : "Log a moment"}
+              accessibilityState={{ expanded: composerExpanded }}
+              aria-expanded={composerExpanded}
+              onPress={() => setComposerExpanded((v) => !v)}
+              hitSlop={6}
+              style={({ pressed }) => [s.compact, pressed && s.pressed]}
             >
-              <Text style={s.composerTitle}>Log a moment</Text>
-              {people.length > 0 ? (
-                <View style={s.pickerRow}>
-                  {people.map((p) => {
-                    const on = p.id === logPersonId;
-                    return (
-                      <Pressable
-                        key={p.id}
-                        testID={`quick-pick-${p.id}`}
-                        nativeID={`quick-pick-${p.id}`}
-                        accessibilityRole="button"
-                        accessibilityState={{ selected: on }}
-                        accessibilityLabel={`Log for ${p.name}`}
-                        onPress={() => {
-                          setLogPersonId(p.id);
-                          setLogHint(null);
-                        }}
-                        style={({ pressed }) => [s.pick, on && s.pickOn, pressed && s.pressed]}
-                      >
-                        <Text style={[s.pickText, on && s.pickTextOn]} numberOfLines={1}>
-                          {p.name}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              ) : null}
-              <TextInput
-                ref={reasonInputRef}
-                testID="quick-reason"
-                nativeID="quick-reason"
-                accessibilityLabel="What happened?"
-                accessibilityHint="A few words about the moment"
-                value={logReason}
-                onChangeText={(t) => {
-                  setLogReason(t);
-                  setLogHint(null);
-                }}
-                placeholder={logPerson ? `What happened with ${logPerson.name}?` : "What happened?"}
-                placeholderTextColor={Lamp.inkFaint}
-                style={s.field}
-                returnKeyType="done"
-              />
-              <Text style={s.fieldLabel}>BRAVING tag</Text>
-              {!logTag && !hasMarble && <Text style={s.guideLine}>{BRAVING_GUIDE}</Text>}
-              <TagField
-                value={logTag}
-                onChange={(t) => {
-                  setLogTag(t);
-                  setLogCarried(false);
-                  setLogHint(null);
-                }}
-                glosses={TAG_GLOSSES}
-                idPrefix="quick-tag-"
-                carried={!!logTag && logCarried}
-              />
-              <View style={s.logRow}>
-                <Pressable
-                  testID="quick-remove"
-                  nativeID="quick-remove"
-                  accessibilityRole="button"
-                  accessibilityLabel="Log a broken promise"
-                  onPress={() => handleQuickLog(-1)}
-                  style={({ pressed }) => [s.removeBtn, pressed && s.pressed]}
-                >
-                  <Text style={s.removeBtnText}>− Broke one</Text>
-                </Pressable>
-                <Pressable
-                  testID="quick-add"
-                  nativeID="quick-add"
-                  accessibilityRole="button"
-                  accessibilityLabel="Log a kept promise"
-                  onPress={() => handleQuickLog(1)}
-                  style={({ pressed }) => [s.keptBtn, pressed && s.pressed]}
-                >
-                  <Text style={s.keptBtnText}>+ Kept one</Text>
-                </Pressable>
-              </View>
-              {/* Validation arrives as a plain fade: opacity-only feedback,
-                  so it stays even with reduced motion. */}
-              {!!logHint && (
-                <Animated.View entering={FadeIn.duration(150)}>
-                  <Text
-                    testID="quick-hint"
-                    nativeID="quick-hint"
-                    style={s.hint}
-                    accessibilityRole="alert"
-                  >
-                    {logHint}
-                  </Text>
-                </Animated.View>
-              )}
-            </Animated.View>
+              <Text style={s.compactText}>Log a moment</Text>
+            </Pressable>
           )}
-
-          {/* Second visit, quiet week: one ghost line pointing at the
-              composer — the single dominant flow stays silent otherwise. */}
-          {quietWeek && (
+          {/* Collapsed only: while the working composer sits below the first
+              board, this line sits under the compact row that opens it. When
+              expanded the line rides with the working composer instead. */}
+          {quietWeek && !composerExpanded && (
             <Text style={s.quietLine} accessible accessibilityLabel="Quiet this week">
               Quiet this week — the composer above is the way back in.
             </Text>
@@ -845,54 +1070,11 @@ export default function Home() {
               other shelf meets add → search → sort after the jars. */}
           {isFirstRun && renderAddRow()}
 
-          {/* The payoff beat: a slower settle (the focal entrance) and a
-              quick fade out, so opening the jar feels continuous. */}
-          {firstNote && (
-            <Animated.View
-              entering={reduceMotion ? undefined : FadeInDown.duration(600).easing(settleEase)}
-              exiting={reduceMotion ? undefined : FadeOut.duration(180)}
-            >
-              <View
-                style={s.firstNote}
-                accessible
-                accessibilityLabel={`First marble in ${firstNote.name}'s jar`}
-              >
-                <Text style={s.firstNoteText}>
-                  First marble in {firstNote.name}’s jar — open it to see the dots answer how you’re
-                  doing.
-                </Text>
-                <View style={s.firstNoteRow}>
-                  <Link href={{ pathname: "/person/[id]", params: { id: firstNote.id } }} asChild>
-                    <Pressable
-                      testID="first-note-open"
-                      nativeID="first-note-open"
-                      accessibilityRole="button"
-                      accessibilityLabel={`Open ${firstNote.name}'s jar`}
-                      onPress={() => setFirstNote(null)}
-                      hitSlop={8}
-                      style={({ pressed }) => [s.noteOpen, pressed && s.pressed]}
-                    >
-                      <Text style={s.noteOpenText}>Open the jar</Text>
-                    </Pressable>
-                  </Link>
-                  <Pressable
-                    testID="first-note-dismiss"
-                    nativeID="first-note-dismiss"
-                    accessibilityRole="button"
-                    accessibilityLabel="Dismiss"
-                    onPress={() => setFirstNote(null)}
-                    hitSlop={8}
-                    style={({ pressed }) => [s.quietBtn, pressed && s.pressed]}
-                  >
-                    <Text style={s.quietBtnText}>Dismiss</Text>
-                  </Pressable>
-                </View>
-              </View>
-            </Animated.View>
-          )}
-
-          {/* Shelf tools (search, sort) live in the footer home, after the
-              jars — the header ends on the transient rows above. */}
+          {/* The header ends here: title, beginnings, compact composer, Undo.
+              Shelf tools (search, sort) live in the footer home, after the
+              jars — Undo stays above the boards, where the jar just left.
+              On 4+ shelves the same tools also sit here, above the boards,
+              as a quiet cluster that never competes with the composer. */}
 
           {/* Quiet undo, one row per waiting jar: each jar is only hidden,
               never deleted, until its own window closes — Undo cancels so
@@ -952,6 +1134,19 @@ export default function Home() {
               </View>
             </Animated.View>
           )}
+          {/* Fast path for large shelves: the same search + sorts as the
+              footer home, in a tight quiet cluster above the boards. Gated
+              at 4+ jars so small shelves keep their single footer home and
+              never meet duplicate tools. Add stays in the footer only. */}
+          {showTopTools && (
+            <Animated.View
+              entering={reduceMotion ? undefined : FadeIn.duration(200)}
+              style={s.toolsTop}
+            >
+              {renderSearchField(true)}
+              {(people.length > 0 || q) && renderSortRow(true)}
+            </Animated.View>
+          )}
         </View>
       }
       ListFooterComponent={
@@ -980,6 +1175,7 @@ export default function Home() {
                     accessibilityRole="button"
                     accessibilityLabel={weekExpanded ? "Show less" : "Show the week"}
                     accessibilityState={{ expanded: weekExpanded }}
+                    aria-expanded={weekExpanded}
                     onPress={() => setWeekExpanded((v) => !v)}
                     hitSlop={6}
                     style={({ pressed }) => [s.weekToggle, pressed && s.pressed]}
@@ -992,46 +1188,14 @@ export default function Home() {
               </View>
             )}
 
-            {/* Shelf tools after the jars: add → search → sort. */}
+            {/* Shelf tools after the jars: add → search → sort. Unchanged
+                below, even when the quiet tool row above the boards is
+                showing — both homes share the same query and sort. */}
             {!isFirstRun && renderAddRow(fresh.length === 0)}
 
             {/* Search stays hidden until the first jar lands. */}
-            {!isFirstRun && (
-              <TextInput
-                testID="search-person-input"
-                nativeID="search-person-input"
-                accessibilityLabel="Search people by name"
-                value={query}
-                onChangeText={setQuery}
-                placeholder="Search jars…"
-                placeholderTextColor={Lamp.inkFaint}
-                style={[s.field, s.searchField]}
-                returnKeyType="search"
-                clearButtonMode="while-editing"
-              />
-            )}
-            {people.length > 0 || q ? (
-              <View style={s.sortRow}>
-                {SORTS.map((o) => {
-                  const on = sort === o.key;
-                  return (
-                    <Pressable
-                      key={o.key}
-                      testID={`sort-${o.key}`}
-                      nativeID={`sort-${o.key}`}
-                      accessibilityRole="button"
-                      accessibilityLabel={o.label}
-                      accessibilityState={{ selected: on }}
-                      onPress={() => setSort(o.key)}
-                      hitSlop={6}
-                      style={({ pressed }) => [s.sort, on && s.sortOn, pressed && s.pressed]}
-                    >
-                      <Text style={[s.sortText, on && s.sortTextOn]}>{o.short}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            ) : null}
+            {!isFirstRun && renderSearchField(false)}
+            {(people.length > 0 || q) && renderSortRow(false)}
           </View>
         )
       }
@@ -1070,6 +1234,13 @@ export default function Home() {
           <Text testID="empty-state" nativeID="empty-state" style={s.empty}>
             No jars match “{q}”. Try another name.
           </Text>
+        ) : people.length > 0 ? (
+          // Every jar is waiting just off the shelf in its Undo window —
+          // the shelf isn't bare, so the bare sentence must not flash here.
+          // The Undo rows above are the whole state.
+          <Text testID="empty-state" nativeID="empty-state" style={s.empty}>
+            Every jar is waiting just off the shelf — Undo is above.
+          </Text>
         ) : (
           // The bare shelf is the task: one sentence, with the add row above
           // as its only call to action.
@@ -1079,7 +1250,19 @@ export default function Home() {
           </Text>
         )
       }
-      renderItem={({ item, index }) => renderRow(item, index)}
+      renderItem={({ item, index }) =>
+        // The working composer + payoff ride directly below the first board,
+        // so the object precedes its tools and DOM order matches the eye.
+        index === 0 && showComposerBlock ? (
+          <View>
+            {renderRow(item, index)}
+            {renderFullComposer()}
+            {renderFirstNote()}
+          </View>
+        ) : (
+          renderRow(item, index)
+        )
+      }
     />
   );
 }
@@ -1113,6 +1296,24 @@ const s = StyleSheet.create({
     elevation: 4,
   },
   composerTitle: { fontFamily: Font.display, fontSize: 22, color: Lamp.ink },
+  // Compact composer row: the header's capped promise of the working
+  // composer below the first board. Rail language, quieter than the card.
+  compact: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: Lamp.board,
+    borderWidth: 1,
+    borderColor: Lamp.hairline,
+    borderRadius: 99,
+    paddingHorizontal: 18,
+    paddingVertical: 13,
+    marginTop: 12,
+  },
+  compactText: { fontFamily: Font.bodySemi, fontWeight: "600", fontSize: 15, color: Lamp.ink },
+  // The working composer keeps its card weight, relocated: one band gap
+  // below the first board instead of the header stack.
+  composerBlock: { marginTop: 14 },
   firstPath: {
     fontFamily: Font.body,
     fontSize: 13.5,
@@ -1194,7 +1395,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  undoTop: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4 },
+  undoTop: { flexDirection: "row", alignItems: "center", gap: 8 },
   undoTrack: {
     height: 2,
     borderRadius: 99,
@@ -1209,7 +1410,7 @@ const s = StyleSheet.create({
     fontSize: 13.5,
     lineHeight: 19,
     color: Lamp.inkSoft,
-    flexShrink: 1,
+    flex: 1,
   },
   undoAction: {
     fontFamily: Font.bodySemi,
@@ -1287,6 +1488,24 @@ const s = StyleSheet.create({
     fontSize: 16,
   },
   hint: { fontFamily: Font.body, fontSize: 13, lineHeight: 18, color: Lamp.honey, marginTop: 10 },
+  // Seven-meanings expander: one quiet line under the tag pills, all seven
+  // glosses revealed at once when asked. Quieter than the guide it outlives.
+  meaningsToggle: { alignSelf: "flex-start", paddingVertical: 8, paddingHorizontal: 6 },
+  meaningsToggleText: {
+    fontFamily: Font.bodySemi,
+    fontWeight: "600",
+    fontSize: 14,
+    color: Lamp.inkSoft,
+  },
+  meaningsLine: {
+    fontFamily: Font.body,
+    fontSize: 13,
+    lineHeight: 19,
+    color: Lamp.inkSoft,
+    marginTop: 4,
+  },
+  meaningsName: { fontFamily: Font.bodySemi, fontWeight: "600", color: Lamp.inkSoft },
+  meaningsGloss: { fontFamily: Font.body, color: Lamp.inkSoft },
   week: { marginTop: 22 },
   weekTitle: { fontFamily: Font.display, fontSize: 22, color: Lamp.ink, marginBottom: 10 },
   weekSlip: { marginBottom: 10 },
@@ -1312,7 +1531,7 @@ const s = StyleSheet.create({
     fontFamily: Font.bodySemi,
     fontWeight: "600",
     fontSize: 14,
-    color: Lamp.inkFaint,
+    color: Lamp.inkSoft,
   },
   dangerBtn: {
     backgroundColor: Lamp.cherryDeep,
@@ -1322,6 +1541,12 @@ const s = StyleSheet.create({
   },
   searchField: { marginTop: 10 },
   sortRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10, marginBottom: 14 },
+  // Quiet tool row above the boards (4+ jars): the same controls in a
+  // tighter cluster with no bottom swell, so the tools read as tools and
+  // never compete with the composer card or the checklist above them.
+  toolsTop: { marginTop: 12, gap: 0 },
+  searchFieldTop: { marginTop: 0 },
+  sortRowTop: { marginTop: 8, marginBottom: 2 },
   sort: {
     borderWidth: 1.5,
     borderColor: Lamp.hairline,

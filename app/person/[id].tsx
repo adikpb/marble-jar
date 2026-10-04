@@ -166,9 +166,10 @@ export default function PersonScreen() {
   // jar tip owns its own key — it used to share one with the shelf's
   // first-marble note, so dismissing either dismissed both.
   const [jarTipDismissed, setJarTipDismissed] = useState(() => readSeen("seen:jar-tip"));
-  const [answerDismissed, setAnswerDismissed] = useState(() =>
-    readSeen("feature-tooltip-seen-jar-answer"),
-  );
+  // Seven-meanings expander: the guide retires once a tagged marble exists,
+  // so this quiet line keeps all seven glosses one tap away in the composer.
+  // Collapsed by default; plain conditional render, no motion.
+  const [meaningsOpen, setMeaningsOpen] = useState(false);
   // Reduced motion removes the slide but keeps fades and state changes.
   const reduceMotion = useReducedMotion();
 
@@ -257,11 +258,6 @@ export default function PersonScreen() {
     setJarTipDismissed(true);
   }
 
-  function dismissAnswerTip() {
-    markSeen("feature-tooltip-seen-jar-answer");
-    setAnswerDismissed(true);
-  }
-
   function selectChapter(chapterId: string) {
     setSelectedId(chapterId);
     setLimit(PAGE_SIZE);
@@ -310,14 +306,12 @@ export default function PersonScreen() {
   const hasTaggedMarble =
     marbles.some((m) => m.bravingTag.trim().length > 0) ||
     breakdown.some((r) => r.added + r.removed > 0);
-  // Single tip slot, in priority order: the first-marble moment (the
-  // pre-log jar tip, then the post-log first-in payoff) speaks before the
-  // answer reassurance, and the reassurance retires once the tag split has
-  // data to show for itself. Each line stands alone; together only one
-  // shows. Dismissal keys below are untouched.
+  // The first-marble payoff stands alone: it speaks right after the
+  // marble lands, while there is still only one moment in the jar. (The old
+  // answer reassurance is gone — both stores map empty tags to the
+  // "Untagged" label, so the split always has rows once marbles exist and
+  // its gate could never open. Stored dismissal values are left untouched.)
   const firstInActive = !!justLogged && marbles.length === 1;
-  const answerEligible = marbles.length > 0 && !answerDismissed && splitRows.length === 0;
-  const showAnswer = answerEligible && !firstInActive;
 
   const groups: { weekStart: number; items: Marble[] }[] = [];
   for (const m of marbles) {
@@ -496,6 +490,7 @@ export default function PersonScreen() {
       <Text style={s.section}>How the weeks read</Text>
       <View
         testID="trends"
+        nativeID="trends"
         style={s.trendBoard}
         accessible
         accessibilityLabel={
@@ -505,7 +500,7 @@ export default function PersonScreen() {
         }
       >
         {showBars ? (
-          <View style={s.bars} testID="weekly-bars">
+          <View style={s.bars} testID="weekly-bars" nativeID="weekly-bars">
             {bars.map((w) => {
               const positive = w.count > 0;
               const h =
@@ -535,7 +530,7 @@ export default function PersonScreen() {
             })}
           </View>
         ) : (
-          <Text testID="trends-empty" style={s.muted}>
+          <Text testID="trends-empty" nativeID="trends-empty" style={s.muted}>
             Not enough yet — the weeks appear after a couple of moments.
           </Text>
         )}
@@ -544,7 +539,7 @@ export default function PersonScreen() {
         {splitRows.length === 0 ? (
           <Text style={s.muted}>No tagged moments yet — tags gather here once you log them.</Text>
         ) : (
-          <View testID="tag-breakdown">
+          <View testID="tag-breakdown" nativeID="tag-breakdown">
             <View style={s.splitTrack}>
               {splitRows.map((r) => (
                 <View
@@ -577,27 +572,6 @@ export default function PersonScreen() {
           </View>
         )}
       </View>
-
-      {showAnswer && (
-        <Animated.View entering={reduceMotion ? undefined : FadeInDown.duration(400)}>
-          <View style={s.answerTip} accessible accessibilityLabel="How to read this jar">
-            <Text style={s.answerText}>
-              This is how you’re doing — dots, weeks and tags drawn from real moments, not a score.
-            </Text>
-            <Pressable
-              testID="answer-tip-dismiss"
-              nativeID="answer-tip-dismiss"
-              accessibilityRole="button"
-              accessibilityLabel="Dismiss"
-              onPress={dismissAnswerTip}
-              hitSlop={8}
-              style={({ pressed }) => [s.quietBtn, pressed && s.pressed]}
-            >
-              <Text style={s.quietBtnText}>Dismiss</Text>
-            </Pressable>
-          </View>
-        </Animated.View>
-      )}
 
       {!viewingPast && (
         <View>
@@ -654,6 +628,42 @@ export default function PersonScreen() {
             idPrefix="braving-"
             carried={!!tag && tagCarried}
           />
+          {/* The guide above retires once a tagged marble lands; this quiet
+              line keeps all seven meanings one tap away, collapsed until
+              asked. It teaches at the point of use — never selects, never
+              validates. */}
+          <Pressable
+            testID="jar-meanings-toggle"
+            nativeID="jar-meanings-toggle"
+            accessibilityRole="button"
+            accessibilityLabel={
+              meaningsOpen ? "Hide what the seven mean" : "What do the seven mean?"
+            }
+            accessibilityState={{ expanded: meaningsOpen }}
+            aria-expanded={meaningsOpen}
+            onPress={() => setMeaningsOpen((v) => !v)}
+            hitSlop={6}
+            style={({ pressed }) => [s.meaningsToggle, pressed && s.pressed]}
+          >
+            <Text style={s.meaningsToggleText}>
+              {meaningsOpen ? "Hide the seven meanings" : "What do the seven mean?"}
+            </Text>
+          </Pressable>
+          {meaningsOpen && (
+            <View
+              testID="jar-meanings"
+              nativeID="jar-meanings"
+              accessible
+              accessibilityLabel="The seven BRAVING meanings"
+            >
+              {Object.entries(TAG_GLOSSES).map(([t, gloss]) => (
+                <Text key={t} style={s.meaningsLine}>
+                  <Text style={s.meaningsName}>{t}</Text>
+                  <Text style={s.meaningsGloss}> — {gloss}</Text>
+                </Text>
+              ))}
+            </View>
+          )}
           <View style={s.btnRow}>
             <Pressable
               testID="remove-marble"
@@ -686,8 +696,7 @@ export default function PersonScreen() {
 
       <Text style={s.section}>Moments, by week</Text>
       {/* The settle after the marble lands: slower than the tip, still
-          arrival-only, with a quick fade when dismissed. Speaks before the
-          answer reassurance in the single tip slot. */}
+          arrival-only, with a quick fade when dismissed. */}
       {firstInActive && (
         <Animated.View
           entering={reduceMotion ? undefined : FadeInDown.duration(600).easing(settleEase)}
@@ -714,7 +723,7 @@ export default function PersonScreen() {
           Nothing logged yet — the first marble is a few words and one tag away.
         </Text>
       ) : (
-        <View testID="history-list">
+        <View testID="history-list" nativeID="history-list">
           {groups.map((g) => (
             <View key={g.weekStart}>
               <View style={s.weekRule}>
@@ -1063,6 +1072,24 @@ const s = StyleSheet.create({
     fontSize: 15,
   },
   hint: { fontFamily: Font.body, fontSize: 13, lineHeight: 18, color: Lamp.honey, marginTop: 10 },
+  // Seven-meanings expander: one quiet line under the tag pills, all seven
+  // glosses revealed at once when asked. Quieter than the guide it outlives.
+  meaningsToggle: { alignSelf: "flex-start", paddingVertical: 8, paddingHorizontal: 6 },
+  meaningsToggleText: {
+    fontFamily: Font.bodySemi,
+    fontWeight: "600",
+    fontSize: 14,
+    color: Lamp.inkSoft,
+  },
+  meaningsLine: {
+    fontFamily: Font.body,
+    fontSize: 13,
+    lineHeight: 19,
+    color: Lamp.inkSoft,
+    marginTop: 4,
+  },
+  meaningsName: { fontFamily: Font.bodySemi, fontWeight: "600", color: Lamp.inkSoft },
+  meaningsGloss: { fontFamily: Font.body, color: Lamp.inkSoft },
   guideLine: {
     fontFamily: Font.body,
     fontSize: 13,
@@ -1075,7 +1102,7 @@ const s = StyleSheet.create({
     fontFamily: Font.bodySemi,
     fontWeight: "600",
     fontSize: 14,
-    color: Lamp.inkFaint,
+    color: Lamp.inkSoft,
   },
   tipCard: {
     backgroundColor: Lamp.board,
@@ -1094,25 +1121,6 @@ const s = StyleSheet.create({
     marginTop: 8,
   },
   tipDismiss: { alignSelf: "flex-start", marginTop: 8 },
-  answerTip: {
-    backgroundColor: Lamp.board,
-    borderWidth: 1,
-    borderColor: Lamp.hairline,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginTop: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  answerText: {
-    fontFamily: Font.body,
-    fontSize: 13.5,
-    lineHeight: 19,
-    color: Lamp.inkSoft,
-    flex: 1,
-  },
   firstIn: {
     backgroundColor: Lamp.board,
     borderWidth: 1,

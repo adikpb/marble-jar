@@ -350,16 +350,25 @@ bottom so the last slip is never flush against the screen edge. Vertical rhythm
 is one scale: 6, 8, 10, 12, 14, 16, 18, 20, 22, 26, with 18–22px reserved for
 the gap that opens a new band of content.
 
-Vertical order on the shelf is the order of use: question, composer, transient
-notes (the first-marble payoff, the undo queue), then the shelf boards
-themselves, then a footer home for reflection and tools — the week's ribbon
-opening at three slips behind a "Show the week" expander, then the add field,
-search, and sort. The primary action — logging a moment — is above the fold
-and never behind navigation. On
+Vertical order on the shelf is the order of use: question, the beginnings
+checklist (collapsing to a rail once all three land), a compact "Log a
+moment" row, transient notes (the first-marble payoff, the undo queue),
+then the shelf boards themselves — with the working composer riding just
+below the first board once opened, so the jars lead and the tools follow.
+A quiet search-and-sort cluster also sits above the boards once the shelf
+holds 4+ jars; below the threshold the footer home is the only home, and
+both homes share one query and sort. After the boards comes the footer
+home for reflection and tools — the week's ribbon opening at three slips
+behind a "Show the week" expander, then the add field, search, and sort.
+On a first run the composer rests as a two-line preview and the add row
+keeps its pre-jar home above the bare-shelf sentence. The primary action
+— logging a moment — is above the fold and never behind navigation. On
 the jar screen the order is: name and count, the vessel, chapters, the week
 chart and tag split, the log composer, then the history feed, then the sign-off.
 
-Rows wrap rather than scroll where they can: the jar picker, the seven tag dots,
+Rows wrap rather than scroll where they can: the jar picker (capped at four
+pills plus the chosen target, the rest one tap away in search via an "All
+jars…" overflow), the seven tag dots,
 the sort chips and the BRAVING legend all `flexWrap`. Only two things scroll
 horizontally, both deliberately: the chapter strip on the jar screen
 (`showsHorizontalScrollIndicator={false}`) and nothing else.
@@ -437,8 +446,9 @@ no gradient fills anywhere in the product.
 - **Destructive (cherry deep):** the second step of "Remove" on a shelf board,
   inside a confirm box that first states exactly what goes with the person.
 - **Quiet:** "Rename", "Remove", "Cancel", "Keep", "Add the why", "Show more",
-  "Show the week" / "Show less" —
-  `ink-faint`, Karla 600, no fill, no border, `hitSlop` 6–12px. The undo
+  "Show the week" / "Show less", "What do the seven mean?" / "Hide the seven
+  meanings", "All jars…" —
+  `ink-soft`, Karla 600, no fill, no border, `hitSlop` 6–12px. The undo
   action in the removal queue is the same shape in `ink`, so the way back
   reads one step louder than its neighbors.
 - **Pressed:** opacity 0.75 everywhere (0.8 on tag fields). No scale, no color
@@ -488,6 +498,22 @@ no gradient fills anywhere in the product.
 - **Error / disabled:** no disabled state exists. Validation is a single honey
   hint line below the control with `accessibilityRole="alert"`: "Give the moment
   a few words and a BRAVING tag — every marble has a why."
+
+### Queues, guides, and beginnings
+
+- **Undo queue:** a confirmed removal hides its board for 5s before the
+  store is touched; each waiting jar owns one row with a plain-text
+  countdown and a still bar, and Undo only ever cancels. Logging to a
+  queued jar keeps it. While every jar waits, the empty slot reads
+  "Every jar is waiting just off the shelf — Undo is above", never the
+  bare-shelf sentence.
+- **Meanings expander:** the BRAVING guide retires after the first tagged
+  marble, and a quiet "What do the seven mean?" line on both composers
+  keeps all seven glosses one tap away. It teaches at the point of use —
+  never selects, never validates.
+- **Beginnings checklist:** three operable rows (add someone, log a
+  moment, open the jar) ticking from real shelf state, collapsing to a
+  rail when all three land. Dismissal persists; ticks never do.
 
 ### Navigation
 
