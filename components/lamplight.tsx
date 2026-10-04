@@ -55,7 +55,7 @@ export function MarbleDots({
     );
   }
   return (
-    <View accessible accessibilityLabel={label} style={md.row}>
+    <View accessible={!!label} accessibilityLabel={label} style={md.row}>
       {dots}
     </View>
   );
@@ -90,6 +90,7 @@ export function TagField({
             <Pressable
               key={t}
               testID={`${idPrefix}${t}`}
+              nativeID={`${idPrefix}${t}`}
               accessibilityRole="button"
               accessibilityState={{ selected: active }}
               accessibilityLabel={gloss ? `${t}. ${gloss}` : t}
@@ -182,10 +183,7 @@ const sl = StyleSheet.create({
     borderRadius: 6,
     padding: 12,
     paddingTop: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
+    boxShadow: "0px 4px 10px rgba(0, 0, 0, 0.35)",
     elevation: 3,
   },
   slipRemoved: { backgroundColor: Lamp.paperDeep, opacity: 0.82 },
@@ -194,10 +192,7 @@ const sl = StyleSheet.create({
     height: 13,
     borderRadius: 6.5,
     marginBottom: 6,
-    shadowColor: "#000",
-    shadowOpacity: 0.4,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 2 },
+    boxShadow: "0px 2px 3px rgba(0, 0, 0, 0.4)",
     elevation: 2,
   },
   words: { fontFamily: Font.hand, fontSize: 20, lineHeight: 24, color: Lamp.paperInk },

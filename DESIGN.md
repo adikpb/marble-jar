@@ -123,14 +123,13 @@ components:
     rounded: "{rounded.pill}"
     padding: "9px 15px"
   tag-field:
-    # The fill is the row tag's own hue; the selected row inverts to board-raised
-    # and keeps the hue as a 2px lit edge.
+    # One pattern on both composers: hue flood at rest, board-raised + 2px hue
+    # edge when selected. Tap-to-clear; gloss reads once below the row.
     backgroundColor: "{colors.tag-boundaries}"
     textColor: "{colors.paper-ink}"
     typography: "{typography.label}"
-    rounded: "{rounded.field}"
-    padding: "10px 14px"
-    height: "44px"
+    rounded: "{rounded.pill}"
+    padding: "8px 12px"
   jar-board:
     backgroundColor: "{colors.board}"
     textColor: "{colors.ink}"
@@ -269,6 +268,9 @@ action and meaning.
   removal. **Paper Ink:** text and marks on paper. **Paper Soft:** the small
   meta line on a slip (who, tag, day).
 - **Cream:** the brightest step, reserved for text sitting on cherry.
+  Cream-on-cherry computes 4.44:1 — 0.06 under WCAG AA for the 15–16px bold
+  action labels. This is accepted tension, not a violation: never brighten
+  either value to chase the ratio; reach for weight, size, or spacing instead.
 - **Empty Ring:** the stroke color of a marble slot with nothing in it.
 
 ### Named Rules
@@ -441,15 +443,13 @@ no gradient fills anywhere in the product.
   to `ground`, so selection reads as lamplight rather than as color. The shelf's
   jar picker is the one exception: its selected state fills cherry, because
   choosing a jar is a live action.
-- **Tag dots (shelf composer):** 99px, transparent with a 2px transparent
-  border at rest, each carrying a 13px hue ball and a 12.5px `ink-faint` tag
-  name; selected switches the border to the tag's own hue and the name to `ink`.
-  No fill, ever — the composer reads as a row of beads, not as buttons.
-- **Tag fields (jar screen):** the full-bleed alternative. Each BRAVING row
-  floods with its own hue at rest, with `paper-ink` label and gloss and a
-  `rgba(43,30,17,0.55)` pin; the chosen row goes to `board-raised` with `ink`
-  label and the hue kept as a 2px lit edge and a solid pin. 44px tall,
-  14px radius, 10/14 padding, 8px between rows.
+- **Tag fields (both composers):** the one tag pattern, used identically on the
+  shelf and the jar screen. Each BRAVING pill is 99px, flooded with its own hue
+  at rest with `paper-ink` label and gloss and a `rgba(43,30,17,0.55)` pin; the
+  chosen pill goes to `board-raised` with `ink` label and the hue kept as a 2px
+  lit edge and a solid pin. Tap-to-clear back to untagged; the chosen tag's
+  gloss reads once below the row. Hue-as-fill at rest and hue-as-edge when
+  selected is one grammar — never border-only beads.
 
 ### Cards / Containers
 

@@ -20,7 +20,6 @@ export const Lamp = {
   cherryDeep: "#A03420",
   honey: "#D9A441",
   empty: "#453019",
-  good: "#7FB069",
 } as const;
 
 export const Font = {

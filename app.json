@@ -2,7 +2,7 @@
   "expo": {
     "name": "marble-jar",
     "slug": "marble-jar",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -16,6 +16,7 @@
     },
     "android": {
       "package": "com.marblejar.app",
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

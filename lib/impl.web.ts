@@ -15,7 +15,7 @@ import {
   tagLabel,
   uid,
   type WeeklyTrendPoint,
-} from "./store";
+} from "./store-shared";
 
 // Web fallback: localStorage. Static web hosts (e.g. Pages) can't set
 // COOP/COEP headers, so WASM SQLite is off the table here. Same async API

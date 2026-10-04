@@ -2,10 +2,16 @@
 // with real marble glass, the weeks read as a staff, every moment a slip.
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import Animated, { FadeInDown, ZoomIn } from "react-native-reanimated";
+import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import Animated, {
+  Easing,
+  FadeInDown,
+  FadeOut,
+  useReducedMotion,
+  ZoomIn,
+} from "react-native-reanimated";
 import { MarbleDots, Slip, TagField } from "../../components/lamplight";
-import { TAG_GLOSSES } from "../../constants/braving";
+import { BRAVING_GUIDE, TAG_GLOSSES, WHY_HINT } from "../../constants/braving";
 import { Font, Lamp } from "../../constants/lamplight";
 import {
   addMarble,
@@ -30,6 +36,80 @@ import {
 
 const PAGE_SIZE = 20;
 const TREND_WEEKS_SHOWN = 8;
+
+// One ease for every arrival: a quick rise that settles, never springs.
+// Spatial entrances use it; exits are always shorter so leaving feels instant.
+const settleEase = Easing.bezier(0.16, 1, 0.3, 1);
+
+// Seen flags live in localStorage on web and fall back to show-again on
+// native, where there is no shared web storage. Guarded so neither
+// platform can crash on the other's storage.
+function readSeen(key: string): boolean {
+  try {
+    if (typeof localStorage === "undefined") return false;
+    return localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markSeen(key: string): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(key, "1");
+  } catch {
+    // private mode: the tip simply shows again next cold start
+  }
+}
+
+// Last-used BRAVING tag as a soft default: same guarded localStorage
+// pattern as the seen flags, no ledger keys. Empty on true first use so
+// nothing is preselected; afterwards the last logged tag pre-fills.
+function readLastTag(): string {
+  try {
+    if (typeof localStorage === "undefined") return "";
+    const v = localStorage.getItem("seen:last-tag");
+    if (!v || !BRAVING_TAGS.includes(v as never)) return "";
+    return v;
+  } catch {
+    return "";
+  }
+}
+
+function writeLastTag(tag: string): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    if (!tag) return;
+    localStorage.setItem("seen:last-tag", tag);
+  } catch {
+    // private mode: the soft default simply doesn't persist
+  }
+}
+
+// The web locator: the native stack header is hidden on web, so the
+// back chevron + "Jar" it carried live here instead — ground, ink,
+// 19px Bricolage, the same typographic ‹. Not a kicker: it is the
+// header, and the display name below stays the headline.
+function JarWebHeader({ onBack }: { onBack: () => void }) {
+  return (
+    <View style={s.webHeader} accessible accessibilityLabel="Jar">
+      <Pressable
+        testID="jar-back"
+        nativeID="jar-back"
+        accessibilityRole="button"
+        accessibilityLabel="Back to jars"
+        onPress={onBack}
+        hitSlop={12}
+        style={({ pressed }) => [s.backBtn, pressed && s.pressed]}
+      >
+        <Text style={s.backChev}>‹</Text>
+      </Pressable>
+      <Text style={s.webTitle} accessibilityRole="header">
+        Jar
+      </Text>
+    </View>
+  );
+}
 
 function weekLabel(weekStart: number): string {
   const d = new Date(weekStart);
@@ -57,7 +137,7 @@ export default function PersonScreen() {
   const [count, setCount] = useState(0);
   const [pct, setPct] = useState(0);
   const [reason, setReason] = useState("");
-  const [tag, setTag] = useState<string>("");
+  const [tag, setTag] = useState<string>(() => readLastTag());
   const [formHint, setFormHint] = useState<string | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [live, setLive] = useState<Chapter | null>(null);
@@ -71,6 +151,19 @@ export default function PersonScreen() {
   const [whyTag, setWhyTag] = useState("");
   const [revision, setRevision] = useState(0);
   const [justLogged, setJustLogged] = useState<string | null>(null);
+  // First fetch still in flight: empties stay quiet until the jar answers,
+  // so "nothing logged yet" can never flash over arriving moments — and a
+  // jar that answers "nobody here" gets the not-found screen, not "Loading…".
+  const [hydrated, setHydrated] = useState(false);
+  // Contextual tips: taught once, at the point of use, never twice. The
+  // jar tip owns its own key — it used to share one with the shelf's
+  // first-marble note, so dismissing either dismissed both.
+  const [jarTipDismissed, setJarTipDismissed] = useState(() => readSeen("seen:jar-tip"));
+  const [answerDismissed, setAnswerDismissed] = useState(() =>
+    readSeen("feature-tooltip-seen-jar-answer"),
+  );
+  // Reduced motion removes the slide but keeps fades and state changes.
+  const reduceMotion = useReducedMotion();
 
   const selected: Chapter | null = selectedId
     ? (chapters.find((c) => c.id === selectedId) ?? live)
@@ -110,25 +203,53 @@ export default function PersonScreen() {
       setHasMore(page.length > limit);
       setTrend(tr);
       setBreakdown(bd);
-    })().catch(() => undefined);
+    })()
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setHydrated(true);
+      });
     return () => {
       cancelled = true;
     };
   }, [personId, selectedId, limit, revision]);
 
+  // Opening a jar is real work — the shelf checklist ticks from this
+  // trace, set once per jar rather than on every refresh.
+  useEffect(() => {
+    if (personId) markSeen("seen:checklist-opened");
+  }, [personId]);
+
   async function handleDelta(delta: 1 | -1) {
     if (!personId) return;
     if (!reason.trim() || !tag) {
-      setFormHint("Give the moment a few words and a BRAVING tag — every marble has a why.");
+      setFormHint(WHY_HINT);
       return;
     }
-    const m = await addMarble(personId, delta, reason, tag);
+    const usedTag = tag;
+    const m = await addMarble(personId, delta, reason, usedTag);
     setReason("");
-    setTag("");
+    // Soft default: keep the just-used tag selected and persist it, so the
+    // next moment starts where the last one left off. Tapping the active
+    // pill still clears to untagged, and empty submits still hit WHY_HINT.
+    setTag(usedTag);
+    writeLastTag(usedTag);
     setFormHint(null);
     setJustLogged(m.id);
+    // The first-marble tip has served its purpose once a marble exists.
+    markSeen("seen:jar-tip");
+    setJarTipDismissed(true);
     setLimit(PAGE_SIZE);
     setRevision((r) => r + 1);
+  }
+
+  function dismissJarTip() {
+    markSeen("seen:jar-tip");
+    setJarTipDismissed(true);
+  }
+
+  function dismissAnswerTip() {
+    markSeen("feature-tooltip-seen-jar-answer");
+    setAnswerDismissed(true);
   }
 
   function selectChapter(chapterId: string) {
@@ -169,12 +290,66 @@ export default function PersonScreen() {
     .concat([breakdown.find((r) => !BRAVING_TAGS.includes(r.tag as never)) ?? null])
     .filter((r): r is TagBreakdownRow => !!r && r.added + r.removed > 0);
 
+  // The explainer retires only once a tagged marble exists — not on jar
+  // creation — so fast jar-adders still meet BRAVING. Covers the paged
+  // feed via the breakdown fallback.
+  const hasTaggedMarble =
+    marbles.some((m) => m.bravingTag.trim().length > 0) ||
+    breakdown.some((r) => r.added + r.removed > 0);
+
   const groups: { weekStart: number; items: Marble[] }[] = [];
   for (const m of marbles) {
     const ws = startOfWeek(m.ts);
     const last = groups[groups.length - 1];
     if (last && last.weekStart === ws) last.items.push(m);
     else groups.push({ weekStart: ws, items: [m] });
+  }
+
+  // Loading owns one quiet line — none of the empty states below may show
+  // until the jar has answered. A missing jar gets the not-found screen:
+  // a 20px display line, one honest sentence, and the way back.
+  if (!hydrated) {
+    return (
+      <ScrollView
+        style={s.page}
+        contentContainerStyle={s.content}
+        keyboardShouldPersistTaps="handled"
+      >
+        {Platform.OS === "web" && <JarWebHeader onBack={goBack} />}
+        <Text style={s.name} accessibilityRole="header">
+          Loading…
+        </Text>
+      </ScrollView>
+    );
+  }
+  if (!person) {
+    return (
+      <ScrollView
+        style={s.page}
+        contentContainerStyle={s.content}
+        keyboardShouldPersistTaps="handled"
+      >
+        {Platform.OS === "web" && <JarWebHeader onBack={goBack} />}
+        <Text style={s.missingTitle} accessibilityRole="header">
+          No jar here
+        </Text>
+        <Text style={s.missingBody}>
+          This jar isn&apos;t on the shelf. It may have been removed — the shelf still holds the
+          rest.
+        </Text>
+        <Pressable
+          testID="missing-back"
+          nativeID="missing-back"
+          accessibilityRole="button"
+          accessibilityLabel="Back to jars"
+          onPress={goBack}
+          hitSlop={8}
+          style={({ pressed }) => [s.missingBack, pressed && s.pressed]}
+        >
+          <Text style={s.missingBackText}>‹ Back to jars</Text>
+        </Pressable>
+      </ScrollView>
+    );
   }
 
   return (
@@ -200,6 +375,7 @@ export default function PersonScreen() {
           ),
         }}
       />
+      {Platform.OS === "web" && <JarWebHeader onBack={goBack} />}
       <Text style={s.name} accessibilityRole="header">
         {person?.name ?? "Loading…"}
       </Text>
@@ -221,7 +397,7 @@ export default function PersonScreen() {
         </View>
         <Text style={s.vesselHint}>
           {count <= 0
-            ? "Empty jar — every marble starts with a small kept promise."
+            ? "Empty jar — every marble starts with a small kept promise. Log it below: a few words and one tag."
             : count >= JAR_CAPACITY
               ? "A full jar. That's deep trust — keep tending it."
               : `${JAR_CAPACITY - count} marbles to a full jar.`}
@@ -249,6 +425,7 @@ export default function PersonScreen() {
                     <Pressable
                       key={c.id}
                       testID={`chapter-${c.index + 1}`}
+                      nativeID={`chapter-${c.index + 1}`}
                       accessibilityRole="button"
                       accessibilityState={{ selected: active }}
                       accessibilityLabel={
@@ -276,6 +453,7 @@ export default function PersonScreen() {
           {viewingPast && (
             <View
               testID="chapter-banner"
+              nativeID="chapter-banner"
               style={s.chapterBanner}
               accessible
               accessibilityLabel={`Jar number ${selected.index + 1} is closed. Revisiting for reflection only.`}
@@ -378,8 +556,54 @@ export default function PersonScreen() {
         )}
       </View>
 
+      {marbles.length > 0 && !answerDismissed && (
+        <Animated.View entering={reduceMotion ? undefined : FadeInDown.duration(400)}>
+          <View style={s.answerTip} accessible accessibilityLabel="How to read this jar">
+            <Text style={s.answerText}>
+              This is how you’re doing — dots, weeks and tags drawn from real moments, not a score.
+            </Text>
+            <Pressable
+              testID="answer-tip-dismiss"
+              nativeID="answer-tip-dismiss"
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss"
+              onPress={dismissAnswerTip}
+              hitSlop={8}
+              style={({ pressed }) => [s.quietBtn, pressed && s.pressed]}
+            >
+              <Text style={s.quietBtnText}>Dismiss</Text>
+            </Pressable>
+          </View>
+        </Animated.View>
+      )}
+
       {!viewingPast && (
         <View>
+          {marbles.length === 0 && !jarTipDismissed && person && (
+            <Animated.View
+              entering={reduceMotion ? undefined : FadeInDown.duration(400).easing(settleEase)}
+              exiting={reduceMotion ? undefined : FadeOut.duration(180)}
+            >
+              <View style={s.tipCard} accessible accessibilityLabel="The first marble: what to log">
+                <Text style={s.tipTitle}>The first marble</Text>
+                <Text style={s.tipText}>
+                  Give the moment a few words and pick one tag below — that pair is the why every
+                  marble carries. Start small; a remembered detail counts.
+                </Text>
+                <Pressable
+                  testID="jar-tip-dismiss"
+                  nativeID="jar-tip-dismiss"
+                  accessibilityRole="button"
+                  accessibilityLabel="Dismiss"
+                  onPress={dismissJarTip}
+                  hitSlop={8}
+                  style={({ pressed }) => [s.tipDismiss, pressed && s.pressed]}
+                >
+                  <Text style={s.quietBtnText}>Got it</Text>
+                </Pressable>
+              </View>
+            </Animated.View>
+          )}
           <Text style={s.section}>Log a moment</Text>
           <TextInput
             testID="marble-reason"
@@ -396,6 +620,7 @@ export default function PersonScreen() {
             style={s.field}
           />
           <Text style={s.fieldLabel}>BRAVING tag</Text>
+          {!tag && !hasTaggedMarble && <Text style={s.guideLine}>{BRAVING_GUIDE}</Text>}
           <TagField
             value={tag}
             onChange={(t) => {
@@ -408,6 +633,7 @@ export default function PersonScreen() {
           <View style={s.btnRow}>
             <Pressable
               testID="remove-marble"
+              nativeID="remove-marble"
               accessibilityRole="button"
               accessibilityLabel="Remove a marble"
               onPress={() => handleDelta(-1)}
@@ -435,8 +661,33 @@ export default function PersonScreen() {
       )}
 
       <Text style={s.section}>Moments, by week</Text>
+      {/* The settle after the marble lands: slower than the tip, still
+          arrival-only, with a quick fade when dismissed. */}
+      {justLogged && marbles.length === 1 && (
+        <Animated.View
+          entering={reduceMotion ? undefined : FadeInDown.duration(600).easing(settleEase)}
+          exiting={reduceMotion ? undefined : FadeOut.duration(180)}
+        >
+          <View style={s.firstIn} accessible accessibilityLabel="First marble logged">
+            <Text style={s.firstInText}>
+              First marble in this jar — the weeks and tag split grow from here as moments gather.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss"
+              onPress={() => setJustLogged(null)}
+              hitSlop={8}
+              style={({ pressed }) => [s.quietBtn, pressed && s.pressed]}
+            >
+              <Text style={s.quietBtnText}>Dismiss</Text>
+            </Pressable>
+          </View>
+        </Animated.View>
+      )}
       {marbles.length === 0 ? (
-        <Text style={s.empty}>Nothing logged yet — add the first marble.</Text>
+        <Text style={s.empty}>
+          Nothing logged yet — the first marble is a few words and one tag away.
+        </Text>
       ) : (
         <View testID="history-list">
           {groups.map((g) => (
@@ -505,6 +756,7 @@ export default function PersonScreen() {
                             <View style={s.btnRow}>
                               <Pressable
                                 testID="why-cancel"
+                                nativeID="why-cancel"
                                 accessibilityRole="button"
                                 accessibilityLabel="Cancel adding the why"
                                 onPress={() => setExpandedWhy(null)}
@@ -518,6 +770,7 @@ export default function PersonScreen() {
                               </Pressable>
                               <Pressable
                                 testID="why-save"
+                                nativeID="why-save"
                                 accessibilityRole="button"
                                 accessibilityLabel="Save the why"
                                 onPress={() => saveWhy(item)}
@@ -534,6 +787,7 @@ export default function PersonScreen() {
                         ) : (
                           <Pressable
                             testID={`why-${item.id}`}
+                            nativeID={`why-${item.id}`}
                             accessibilityRole="button"
                             accessibilityLabel="Add the missing why for this marble"
                             onPress={() => openWhy(item)}
@@ -546,7 +800,10 @@ export default function PersonScreen() {
                   </View>
                 );
                 return justLogged === item.id ? (
-                  <Animated.View key={item.id} entering={ZoomIn.duration(380)}>
+                  <Animated.View
+                    key={item.id}
+                    entering={reduceMotion ? undefined : ZoomIn.duration(380)}
+                  >
                     {inner}
                   </Animated.View>
                 ) : (
@@ -569,7 +826,7 @@ export default function PersonScreen() {
           <Text style={s.moreBtnText}>Show more</Text>
         </Pressable>
       )}
-      <Animated.View entering={FadeInDown.duration(400)}>
+      <Animated.View entering={reduceMotion ? undefined : FadeInDown.duration(400)}>
         <Text style={s.signoff}>Small moments, collected.</Text>
       </Animated.View>
     </ScrollView>
@@ -588,6 +845,13 @@ const s = StyleSheet.create({
   },
   backBtn: { paddingVertical: 4, paddingRight: 14 },
   backChev: { fontSize: 34, lineHeight: 34, color: Lamp.ink, fontFamily: Font.body },
+  webHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Lamp.ground,
+    paddingVertical: 6,
+  },
+  webTitle: { fontFamily: Font.display, fontSize: 19, lineHeight: 22, color: Lamp.ink },
   name: { fontFamily: Font.display, fontSize: 44, lineHeight: 46, color: Lamp.ink },
   count: {
     fontFamily: Font.bodySemi,
@@ -606,10 +870,7 @@ const s = StyleSheet.create({
     padding: 16,
     paddingTop: 0,
     overflow: "hidden",
-    shadowColor: "#000",
-    shadowOpacity: 0.45,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
+    boxShadow: "0px 8px 18px rgba(0, 0, 0, 0.45)",
     elevation: 4,
   },
   vesselNeck: {
@@ -761,6 +1022,76 @@ const s = StyleSheet.create({
     fontSize: 15,
   },
   hint: { fontFamily: Font.body, fontSize: 13, lineHeight: 18, color: Lamp.honey, marginTop: 10 },
+  guideLine: {
+    fontFamily: Font.body,
+    fontSize: 13,
+    lineHeight: 18,
+    color: Lamp.inkSoft,
+    marginBottom: 8,
+  },
+  quietBtn: { paddingVertical: 8, paddingHorizontal: 6 },
+  quietBtnText: {
+    fontFamily: Font.bodySemi,
+    fontWeight: "600",
+    fontSize: 14,
+    color: Lamp.inkFaint,
+  },
+  tipCard: {
+    backgroundColor: Lamp.board,
+    borderWidth: 1,
+    borderColor: Lamp.hairline,
+    borderRadius: 20,
+    padding: 16,
+    marginTop: 18,
+  },
+  tipTitle: { fontFamily: Font.display, fontSize: 22, color: Lamp.ink },
+  tipText: {
+    fontFamily: Font.body,
+    fontSize: 14,
+    lineHeight: 20,
+    color: Lamp.inkSoft,
+    marginTop: 8,
+  },
+  tipDismiss: { alignSelf: "flex-start", marginTop: 8 },
+  answerTip: {
+    backgroundColor: Lamp.board,
+    borderWidth: 1,
+    borderColor: Lamp.hairline,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginTop: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  answerText: {
+    fontFamily: Font.body,
+    fontSize: 13.5,
+    lineHeight: 19,
+    color: Lamp.inkSoft,
+    flex: 1,
+  },
+  firstIn: {
+    backgroundColor: Lamp.board,
+    borderWidth: 1,
+    borderColor: Lamp.hairline,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginTop: 10,
+    marginBottom: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  firstInText: {
+    fontFamily: Font.body,
+    fontSize: 13.5,
+    lineHeight: 19,
+    color: Lamp.inkSoft,
+    flex: 1,
+  },
   weekRule: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 14, marginBottom: 8 },
   weekStaff: { width: 3, alignSelf: "stretch", backgroundColor: Lamp.honey, borderRadius: 2 },
   weekHeader: { fontFamily: Font.display, fontSize: 18, color: Lamp.ink },
@@ -802,6 +1133,21 @@ const s = StyleSheet.create({
     color: Lamp.inkSoft,
     textAlign: "center",
     marginTop: 30,
+  },
+  missingTitle: { fontFamily: Font.display, fontSize: 20, color: Lamp.ink, marginTop: 8 },
+  missingBody: {
+    fontFamily: Font.body,
+    fontSize: 14,
+    lineHeight: 20,
+    color: Lamp.inkSoft,
+    marginTop: 10,
+  },
+  missingBack: { alignSelf: "flex-start", marginTop: 14, paddingVertical: 8, paddingRight: 6 },
+  missingBackText: {
+    fontFamily: Font.bodySemi,
+    fontWeight: "600",
+    fontSize: 15,
+    color: Lamp.ink,
   },
   pressed: { opacity: 0.75 },
 });

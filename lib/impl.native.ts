@@ -16,7 +16,7 @@ import {
   tagLabel,
   uid,
   type WeeklyTrendPoint,
-} from "./store";
+} from "./store-shared";
 
 let nativeDb: SQLite.SQLiteDatabase | null = null;
 let nativeReady = false;

@@ -12,6 +12,7 @@ export default function Root({ children }: { children: ReactNode }) {
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+        <title>Marble Jar</title>
 
         {/*
           Disable body scrolling on web. This makes ScrollView components work closer to how they do on native.
@@ -21,7 +22,7 @@ export default function Root({ children }: { children: ReactNode }) {
 
         {/* PWA installability: web app manifest under the /marble-jar baseUrl */}
         <link rel="manifest" href="/marble-jar/manifest.json" />
-        <meta name="theme-color" content="#1E1B16" />
+        <meta name="theme-color" content="#211410" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <link
@@ -41,5 +42,25 @@ export default function Root({ children }: { children: ReactNode }) {
 
 const responsiveBackground = `
 body {
-  background-color: #FAF7F0;
+  background-color: #211410;
+}
+/* Browser surfaces in the world's own palette: lamplight selection,
+   an ink focus ring, and a quiet espresso scrollbar. */
+::selection {
+  background-color: #503722;
+  color: #F5E9D2;
+}
+:focus-visible {
+  outline: 2px solid #F5E9D2;
+  outline-offset: 2px;
+}
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #211410;
+}
+::-webkit-scrollbar-thumb {
+  background: #503722;
+  border-radius: 6px;
 }`;

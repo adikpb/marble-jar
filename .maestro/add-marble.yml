@@ -18,8 +18,10 @@
 #   add-person-input   home: person name field
 #   add-person-button  home: "Add" button
 #   person-row         home: a person entry (opens /person/[id])
-#   jar-count          home row count "0/20 · 0%" and person count "0 / 20 marbles · 0%"
+#   jar-count          home row count "0 of 20 · 0%" and person count "0 of 20 marbles · 0%"
 #   marble-reason      person: reason field
+#   braving-Integrity  person: Integrity tag pill (every marble needs its why:
+#                    a few words AND one BRAVING tag, or the hint blocks it)
 #   add-marble         person: "+ Marble" button
 #
 # Every one of those testIDs is mirrored as `nativeID` in the app. On web
@@ -57,14 +59,14 @@ name: Add a marble to a person and keep it after reload
 - assertVisible: Maya
 - assertVisible:
     id: jar-count
-    text: 0/20.*
+    text: 0 of 20.*
 
 # --- Open the person ---------------------------------------------------------
 - tapOn:
     id: person-row
 - assertVisible:
     id: jar-count
-    text: 0\s/20\smarbles.*
+    text: 0 of 20 marbles.*
 - assertVisible:
     id: marble-reason
 
@@ -74,12 +76,14 @@ name: Add a marble to a person and keep it after reload
 - inputText: remembered the small thing
 - hideKeyboard
 - tapOn:
+    id: braving-Integrity
+- tapOn:
     id: add-marble
 
 # --- Count went 0 -> 1, reason is in the history -----------------------------
 - assertVisible:
     id: jar-count
-    text: 1\s/20\smarbles.*
+    text: 1 of 20 marbles.*
 - assertVisible: remembered the small thing
 
 # --- Reload without clearing state: state must persist -----------------------
@@ -94,4 +98,4 @@ name: Add a marble to a person and keep it after reload
           id: person-row
 - assertVisible:
     id: jar-count
-    text: 1\s/20\smarbles.*
+    text: 1 of 20 marbles.*
